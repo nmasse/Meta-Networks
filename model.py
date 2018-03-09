@@ -1,5 +1,5 @@
 """
-Nicolas Masse 2017
+Nicolas Masse 2018
 Contributions from Gregory Grant, Catherine Lee
 """
 
@@ -7,8 +7,8 @@ import tensorflow as tf
 import numpy as np
 import stimulus
 import time
-import analysis
 from parameters import *
+import os, sys
 
 # Ignore "use compiled version of TensorFlow" errors
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
@@ -23,9 +23,9 @@ class Model:
         self.mask = tf.unstack(mask, axis=0)
 
         # Load meta network state
-        self.W_in = tf.constant(par['W_in'])
-        self.W_ei = tf.constant(par['EI_matrix'])
-        self.hidden_init = tf.constant(par['h_init'])
+        self.W_in = tf.constant(par['W_in'], dtype=tf.float32)
+        self.W_ei = tf.constant(par['EI_matrix'], dtype=tf.float32)
+        self.hidden_init = tf.constant(par['h_init'], dtype=tf.float32)
 
         # Load the initial synaptic depression and facilitation to be used at the start of each trial
         self.synapse_x_init = tf.constant(par['syn_x_init'])
@@ -46,8 +46,8 @@ class Model:
             with tf.variable_scope('network'+str(n)):
                 tf.get_variable('W_rnn', initializer=par['w_rnn0'], trainable=True)
                 tf.get_variable('W_out', initializer=par['w_out0'], trainable=True)
-                tf.get_variable('b_rnn', initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
-                tf.get_variable('b_out', initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
+                tf.get_variable('b_rnn', shape=[par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
+                tf.get_variable('b_out', shape=[par['n_output'], 1], initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
 
 
     def run_model(self):
@@ -74,7 +74,7 @@ class Model:
 
             h = self.hidden_init
             syn_x = self.synapse_x_init
-            syn_y = self.synapse_u_init
+            syn_u = self.synapse_u_init
 
             for t, x in enumerate(self.input_data):
 
@@ -116,7 +116,7 @@ class Model:
                     + tf.random_normal([par['n_hidden'],par['batch_train_size']], 0, par['noise_rnn'], dtype=tf.float32))
 
                 # Compute output state
-                output = tf.matmul(tf.nn.relu(W_out), rnn_state) + b_out
+                output = tf.matmul(tf.nn.relu(W_out), h) + b_out
 
                 # Record the outputs of this time step
                 hidden_state_hist.append(h)
@@ -132,11 +132,11 @@ class Model:
 
     def optimize(self):
 
-        train_ops = []
         self.perf_losses = []
         self.spike_losses = []
+        self.wiring_losses = []
+        self.total_loss = tf.constant(0.)
 
-        total_loss = tf.constant(0.)
         for n in range(par['num_networks']):
 
             # Calculate performance loss
@@ -148,16 +148,21 @@ class Model:
             spike_loss = [par['spike_cost']*tf.reduce_mean(tf.square(h), axis=0) for h in self.networks_hidden[n]]
             spike_loss = tf.reduce_mean(tf.stack(spike_loss, axis=0))
 
+            # Calculate wiring cost
+            wiring_loss = [par['wiring_cost']*tf.nn.relu(W_rnn*par['W_rnn_dist']) for W_rnn in tf.trainable_variables() if 'W_rnn' in W_rnn.name]
+            wiring_loss = tf.reduce_mean(tf.stack(wiring_loss, axis=0))
+
             # Add losses to record
             self.perf_losses.append(perf_loss)
             self.spike_losses.append(spike_loss)
+            self.wiring_losses.append(wiring_loss)
 
             # Collect total loss
-            total_loss += perf_loss + spike_loss
+            self.total_loss += perf_loss + spike_loss + wiring_loss
 
         # Create optimizer and compute gradients
-        opt = tf.train.AdamOptimizer(variables=variables, learning_rate=par['learning_rate'])
-        grads_and_vars = opt.compute_gradients(total_loss)
+        opt = tf.train.AdamOptimizer(learning_rate=par['learning_rate'])
+        grads_and_vars = opt.compute_gradients(self.total_loss)
 
         # Mask and clip gradients
         capped_gvs = []
@@ -168,7 +173,7 @@ class Model:
             elif 'W_out' in var.name:
                 grad *= par['w_out_mask']
                 print('Applied weight mask to w_out')
-            capped_gvs.append(tf.clip_by_norm(grad, par['clim_max_grad_val']), var)
+            capped_gvs.append((tf.clip_by_norm(grad, par['clip_max_grad_val']), var))
 
         # Add the train operation to the list
         self.train_op = opt.apply_gradients(capped_gvs)
@@ -198,6 +203,7 @@ def main(save_fn, gpu_id = None):
 
     """ Set up performance recording """
     model_performance = {'accuracy': [], 'par': [], 'task_list': []}
+    stim = stimulus.Stimulus()
 
     mask = tf.placeholder(tf.float32, shape=[par['num_time_steps'], par['batch_train_size']])
     x = tf.placeholder(tf.float32, shape=[par['n_input'], par['num_time_steps'], par['batch_train_size']])
@@ -230,10 +236,22 @@ def main(save_fn, gpu_id = None):
             """
             Run the model
             """
-            _, loss, perf_loss, spike_loss, y_hat, state_hist, syn_x_hist, syn_u_hist = \
-                sess.run([model.train_op, model.loss, model.perf_loss, model.spike_loss, model.y_hat, \
-                model.hidden_state_hist, model.syn_x_hist, model.syn_u_hist], {x: trial_info['neural_input'], \
+
+            _, total_loss, perf_loss, spike_loss, wiring_loss, state_hist, syn_x_hist, syn_u_hist = \
+                sess.run([model.train_op, model.total_loss, model.perf_losses, \
+                model.spike_losses, model.wiring_losses, model.networks_hidden, model.networks_syn_x, \
+                model.networks_syn_u], {x: trial_info['neural_input'], \
                 y: trial_info['desired_output'], mask: trial_info['train_mask']})
+
+            if i%par['iters_between_outputs'] == 0:# and i != 0:
+                iterstr = 'Iter. {:>4}'.format(i)
+                lossstr = 'Total Loss: {:>7.4}'.format(total_loss)
+                perfstr = 'Perf. Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(perf_loss), np.std(perf_loss))
+                spikstr = 'Spike Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(spike_loss), np.std(spike_loss))
+                wirestr = 'Wiring Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(wiring_loss), np.std(wiring_loss))
+
+                print(' | '.join([str(x) for x in [iterstr, lossstr, perfstr, spikstr, wirestr]]))
+
 
 if __name__ == '__main__':
     main('testing', str(sys.argv[1]))

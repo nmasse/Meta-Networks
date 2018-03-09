@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from itertools import product
 import os
 
 print("--> Loading parameters...")
@@ -20,20 +22,21 @@ par = {
     'analyze_model'         : True,
 
     # Network configuration
-    'synapse_config'        : 'std_stf', # Full is 'std_stf'
+    'synapse_config'        : None, # Full is 'std_stf'
     'exc_inh_prop'          : 0.8,       # Literature 0.8, for EI off 1
-    'var_delay'             : False,
+    'var_delay'             : True,
 
     # Network shape
+    'num_networks'          : 10,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
-    'n_hidden'              : 100,
+    'n_hidden'              : 50,
     'n_output'              : 3,
 
     # Timings and rates
     'dt'                    : 10,
-    'learning_rate'         : 2e-2,
+    'learning_rate'         : 1e-2,
     'membrane_time_constant': 100,
     'connection_prob'       : 1,         # Usually 1
 
@@ -59,19 +62,19 @@ par = {
     'U_std'                 : 0.45,
 
     # Training specs
-    'batch_train_size'      : 1024,
+    'batch_train_size'      : 256,
     'num_iterations'        : 2000,
     'iters_between_outputs' : 50,
 
     # Task specs
     'trial_type'            : 'DMS', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
     'rotation_match'        : 0,  # angular difference between matching sample and test
-    'dead_time'             : 250,
-    'fix_time'              : 400,
-    'sample_time'           : 400,
-    'delay_time'            : 800,
-    'test_time'             : 400,
-    'variable_delay_max'    : 600,
+    'dead_time'             : 50,
+    'fix_time'              : 150,
+    'sample_time'           : 300,
+    'delay_time'            : 300,
+    'test_time'             : 300,
+    'variable_delay_max'    : 300,
     'mask_duration'         : 50,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
     'num_receptive_fields'  : 1,
@@ -249,7 +252,10 @@ def update_dependencies():
     par['num_inh_units'] = par['n_hidden'] - par['num_exc_units']
 
     par['EI_list'] = np.ones(par['n_hidden'], dtype=np.float32)
-    par['EI_list'][-par['num_inh_units']:] = -1.
+    print('Note that EI is currently hard-coded.')
+    #par['EI_list'][-par['num_inh_units']:] = -1.
+    par['EI_list'][20:25] = -1
+    par['EI_list'][45:50] = -1
 
     par['EI_matrix'] = np.diag(par['EI_list'])
 
@@ -286,8 +292,64 @@ def update_dependencies():
     par['hidden_to_hidden_dims'] = [par['n_hidden'], par['n_hidden']]
 
 
-    # Initialize input weights
-    par['w_in0'] = initialize(par['input_to_hidden_dims'], par['connection_prob'])
+    # Building input weights
+    par['W_in'] = np.zeros(par['input_to_hidden_dims'])
+
+    stim_dirs = np.float32(np.arange(0,360,360/par['n_input']))[np.newaxis,:]
+    exc_dirs = np.float32(np.arange(0,360,360/20))[:,np.newaxis]
+    inh_dirs = np.float32(np.arange(0,360,360/5))[:,np.newaxis]
+
+    d_exc = np.cos((stim_dirs - exc_dirs)/180*np.pi)
+    d_inh = np.cos((stim_dirs - inh_dirs)/180*np.pi)
+
+    k_exc = 4
+    k_inh = 1.5
+
+    par['W_in'][:20,:]   = np.exp(k_exc * d_exc)
+    par['W_in'][20:25,:] = np.exp(k_inh * d_inh)
+
+    par['W_in'][:20,:]   /= np.sum(par['W_in'][:20,:], axis=1)[:,np.newaxis]
+    par['W_in'][20:25,:] /= np.sum(par['W_in'][20:25,:], axis=1)[:,np.newaxis]
+
+
+    # Building spatial embedding for recurrent weights
+
+    par['W_rnn_dist'] = np.zeros(par['hidden_to_hidden_dims'])
+
+    r_inh = 1.2     # Corresponds to inh_dirs
+    r_exc = 2.4     # Corresponds to exc_dirs
+    h     = 3.6
+
+    for i, j in product(range(par['n_hidden']), range(par['n_hidden'])):
+
+        # Determining r1 and t1
+        if i in range(20,25) or i in range(45,50):
+            r1 = r_inh
+            t1 = inh_dirs[(i%25)%5]
+        else:
+            r1 = r_exc
+            t1 = exc_dirs[i%25]
+
+        # Determining r2
+        if j in range(20,25) or j in range(45,50):
+            r2 = r_inh
+            t2 = inh_dirs[(j%25)%5]
+        else:
+            r2 = r_exc
+            t2 = exc_dirs[j%25]
+
+        # Finding whether the heights are different
+        if i < 25 and j < 25:
+            rh = 0
+        elif i >= 25 and j >= 25:
+            rh = 0
+        else:
+            rh = h
+
+        # Calculating distance
+        par['W_rnn_dist'][i,j] = np.sqrt( (r1 * np.sin(t1/180*np.pi) - r2 * np.sin(t2/180*np.pi))**2 \
+                                        + (r1 * np.cos(t1/180*np.pi) - r2 * np.cos(t2/180*np.pi))**2 + rh)
+
 
     # Initialize starting recurrent weights
     # If excitatory/inhibitory neurons desired, initializes with random matrix with
