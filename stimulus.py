@@ -286,6 +286,8 @@ class Stimulus:
             else:
                 eod_current = eod
 
+            #print('eod_current ', eod_current-eos)
+
             # set mask to zero during transition from delay to test
             trial_info['train_mask'][eod_current:eod_current+mask_duration, t] = 0
 

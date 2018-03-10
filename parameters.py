@@ -16,7 +16,7 @@ rnd_save_suffix = np.random.randint(10000)
 
 par = {
     # Setup parameters
-    'save_dir'              : './savedir_2000batches/',
+    'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
     'debug_model'           : False,
     'load_previous_model'   : False,
     'analyze_model'         : True,
@@ -27,7 +27,7 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 10,
+    'num_networks'          : 5,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
@@ -43,8 +43,8 @@ par = {
     # Variance values
     'clip_max_grad_val'     : 1,
     'input_mean'            : 0.0,
-    'noise_in_sd'           : 0.1,
-    'noise_rnn_sd'          : 0.5,
+    'noise_in_sd'           : 0.05,
+    'noise_rnn_sd'          : 0.2,
 
     # Tuning function data
     'num_motion_dirs'       : 8,
@@ -53,7 +53,7 @@ par = {
 
     # Cost parameters
     'spike_cost'            : 1e-7,
-    'wiring_cost'           : 1e-7,
+    'wiring_cost'           : 1e-1,
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
@@ -62,9 +62,10 @@ par = {
     'U_std'                 : 0.45,
 
     # Training specs
-    'batch_train_size'      : 256,
-    'num_iterations'        : 2000,
-    'iters_between_outputs' : 50,
+    'batch_train_size'      : 512,
+    'num_iterations'        : 1000,
+    'iters_between_outputs' : 100,
+    'num_network_iters'     : 200,
 
     # Task specs
     'trial_type'            : 'DMS', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
@@ -72,7 +73,7 @@ par = {
     'dead_time'             : 50,
     'fix_time'              : 150,
     'sample_time'           : 300,
-    'delay_time'            : 300,
+    'delay_time'            : 400,
     'test_time'             : 300,
     'variable_delay_max'    : 300,
     'mask_duration'         : 50,  # duration of traing mask after test onset
@@ -258,6 +259,7 @@ def update_dependencies():
     par['EI_list'][45:50] = -1
 
     par['EI_matrix'] = np.diag(par['EI_list'])
+    par['ind_inh'] = np.where(par['EI_list'] == -1)[0]
 
     # Membrane time constant of RNN neurons
     par['alpha_neuron'] = np.float32(par['dt'])/par['membrane_time_constant']
@@ -286,7 +288,8 @@ def update_dependencies():
     ### Setting up assorted intial weights, biases, and other values ###
     ####################################################################
 
-    par['h_init'] = 0.1*np.ones((par['n_hidden'], par['batch_train_size']), dtype=np.float32)
+    par['h_init'] = 0.5*np.ones((par['n_hidden'], par['batch_train_size']), dtype=np.float32)
+    par['h_init'][par['ind_inh']] = 2.0
 
     par['input_to_hidden_dims'] = [par['n_hidden'], par['n_input']]
     par['hidden_to_hidden_dims'] = [par['n_hidden'], par['n_hidden']]
@@ -294,6 +297,7 @@ def update_dependencies():
 
     # Building input weights
     par['W_in'] = np.zeros(par['input_to_hidden_dims'])
+
 
     stim_dirs = np.float32(np.arange(0,360,360/par['n_input']))[np.newaxis,:]
     exc_dirs = np.float32(np.arange(0,360,360/20))[:,np.newaxis]
@@ -316,10 +320,21 @@ def update_dependencies():
 
     par['W_rnn_dist'] = np.zeros(par['hidden_to_hidden_dims'])
 
-    r_inh = 1.2     # Corresponds to inh_dirs
-    r_exc = 2.4     # Corresponds to exc_dirs
-    h     = 3.6
+    r_inh = 2.0     # Corresponds to inh_dirs
+    r_exc = 2.5     # Corresponds to exc_dirs
+    h     = 1.0
+    """
+    neuron_location = np.zeros((par['n_hidden'], 3))
+    num_exc = par['n_hidden']*par['exc_inh_prop']
+    num_inh = par['n_hidden'] - num_exc
+    for i in range(range(par['n_hidden']):
+        if i >=  par['n_hidden']/2:
+            neuron_location[i,2] = h
+        if par['EI_list'][i] == 1:
+            neuron_location[i,0] = r_exc*np.cos(2*np.pi*)
+        else:
 
+    """
     for i, j in product(range(par['n_hidden']), range(par['n_hidden'])):
 
         # Determining r1 and t1
@@ -350,43 +365,29 @@ def update_dependencies():
         par['W_rnn_dist'][i,j] = np.sqrt( (r1 * np.sin(t1/180*np.pi) - r2 * np.sin(t2/180*np.pi))**2 \
                                         + (r1 * np.cos(t1/180*np.pi) - r2 * np.cos(t2/180*np.pi))**2 + rh)
 
-
-    # Initialize starting recurrent weights
-    # If excitatory/inhibitory neurons desired, initializes with random matrix with
-    #   zeroes on the diagonal
-    # If not, initializes with a diagonal matrix
-    if par['EI']:
-        par['w_rnn0'] = initialize(par['hidden_to_hidden_dims'], par['connection_prob'])
-
-        for i in range(par['n_hidden']):
-            par['w_rnn0'][i,i] = 0
-        par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32) - np.eye(par['n_hidden'])
-    else:
-        par['w_rnn0'] = 0.54*np.eye(par['n_hidden'])
-        par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32)
-
-    par['b_rnn0'] = np.zeros((par['n_hidden'], 1), dtype=np.float32)
-
-    # Effective synaptic weights are stronger when no short-term synaptic plasticity
-    # is used, so the strength of the recurrent weights is reduced to compensate
-
-    if par['synapse_config'] == None:
-        par['w_rnn0'] = par['w_rnn0']/(spectral_radius(par['w_rnn0']))
-        print('SR ',spectral_radius(par['w_rnn0']))
-        #par['w_rnn0'] *= 0.3
-        #print('SR ',spectral_radius(par['w_rnn0']))
-        #par['w_rnn0'][:, par['num_exc_units']:] *= par['exc_inh_prop']/(1-par['exc_inh_prop'])
-
-
-    # Initialize output weights and biases
-    par['w_out0'] =initialize([par['n_output'], par['n_hidden']], par['connection_prob'])
-    par['b_out0'] = np.zeros((par['n_output'], 1), dtype=np.float32)
     par['w_out_mask'] = np.ones((par['n_output'], par['n_hidden']), dtype=np.float32)
-
     if par['EI']:
-        par['ind_inh'] = np.where(par['EI_list'] == -1)[0]
-        par['w_out0'][:, par['ind_inh']] = 0
         par['w_out_mask'][:, par['ind_inh']] = 0
+
+    print('Generating random initial weights...')
+    par['w_rnn0'] = []
+    par['w_out0'] = []
+    for n in range(par['num_networks']):
+        par['w_out0'].append(initialize([par['n_output'], par['n_hidden']], par['connection_prob']))
+        if par['EI']:
+            par['w_rnn0'].append(initialize(par['hidden_to_hidden_dims'], par['connection_prob']))
+            par['w_out0'][-1][:, par['ind_inh']] = 0
+            if par['synapse_config'] == None:
+                par['w_rnn0'][-1] = par['w_rnn0'][-1]/(spectral_radius(par['w_rnn0']))
+            for i in range(par['n_hidden']):
+                par['w_rnn0'][-1][i,i] = 0
+            par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32) - np.eye(par['n_hidden'])
+        else:
+            par['w_rnn0'].append(0.54*np.eye(par['n_hidden']))
+            par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32)
+
+
+
 
     """
     Setting up synaptic parameters

@@ -9,6 +9,8 @@ import stimulus
 import time
 from parameters import *
 import os, sys
+import pickle
+import AdamOpt
 
 # Ignore "use compiled version of TensorFlow" errors
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
@@ -44,10 +46,10 @@ class Model:
     def declare_variables(self):
         for n in range(par['num_networks']):
             with tf.variable_scope('network'+str(n)):
-                tf.get_variable('W_rnn', initializer=par['w_rnn0'], trainable=True)
-                tf.get_variable('W_out', initializer=par['w_out0'], trainable=True)
-                tf.get_variable('b_rnn', shape=[par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
-                tf.get_variable('b_out', shape=[par['n_output'], 1], initializer=tf.random_uniform_initializer(-0.1,0.1), trainable=True)
+                tf.get_variable('W_rnn', initializer=par['w_rnn0'][n], trainable=True)
+                tf.get_variable('W_out', initializer=par['w_out0'][n], trainable=True)
+                tf.get_variable('b_rnn', shape=[par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-1e-6,1e-6), trainable=True)
+                tf.get_variable('b_out', shape=[par['n_output'], 1], initializer=tf.random_uniform_initializer(-1e-6,0.001), trainable=True)
 
 
     def run_model(self):
@@ -126,8 +128,8 @@ class Model:
 
             self.networks_hidden.append(hidden_state_hist)
             self.networks_output.append(output_rec)
-            self.networks_syn_x.append(syn_x_hist)
-            self.networks_syn_u.append(syn_u_hist)
+            #self.networks_syn_x.append(syn_x_hist)
+            #self.networks_syn_u.append(syn_u_hist)
 
 
     def optimize(self):
@@ -136,6 +138,9 @@ class Model:
         self.spike_losses = []
         self.wiring_losses = []
         self.total_loss = tf.constant(0.)
+
+        self.variables = [var for var in tf.trainable_variables() if not var.op.name.find('conv')==0]
+        adam_optimizer = AdamOpt.AdamOpt(self.variables, learning_rate = par['learning_rate'])
 
         for n in range(par['num_networks']):
 
@@ -160,39 +165,37 @@ class Model:
             # Collect total loss
             self.total_loss += perf_loss + spike_loss + wiring_loss
 
-        # Create optimizer and compute gradients
-        opt = tf.train.AdamOptimizer(learning_rate=par['learning_rate'])
-        grads_and_vars = opt.compute_gradients(self.total_loss)
 
-        # Mask and clip gradients
-        capped_gvs = []
-        for grad, var in grads_and_vars:
-            if 'W_rnn' in var.name:
-                grad *= par['w_rnn_mask']
-                print('Applied weight mask to w_rnn')
-            elif 'W_out' in var.name:
-                grad *= par['w_out_mask']
-                print('Applied weight mask to w_out')
-            capped_gvs.append((tf.clip_by_norm(grad, par['clip_max_grad_val']), var))
-
-        # Add the train operation to the list
-        self.train_op = opt.apply_gradients(capped_gvs)
+        self.train_op = adam_optimizer.compute_gradients(self.total_loss)
+        self.reset_adam_op = adam_optimizer.reset_params()
+        self.reset_weights()
 
 
-def train_and_analyze(gpu_id):
+    def reset_weights(self):
 
-    tf.reset_default_graph()
-    main(gpu_id)
-    update_parameters(revert_analysis_par)
+        reset_weights = []
+        for var in tf.trainable_variables():
+            if 'b' in var.op.name:
+                # reset biases to 0
+                reset_weights.append(tf.assign(var, var*0.))
+            else:
+                for n in range(par['num_networks']):
+                    if 'network' + str(n) + '/W_rnn' in var.op.name:
+                        reset_weights.append(tf.assign(var, par['w_rnn0'][n]))
+                    elif 'network' + str(n) + '/W_out' in var.op.name:
+                        reset_weights.append(tf.assign(var, par['w_out0'][n]))
+
+        self.reset_weights = tf.group(*reset_weights)
 
 
-def main(save_fn, gpu_id = None):
+def main(gpu_id = None):
 
     print('\nRunning model.\n')
 
     ##################
     ### Setting Up ###
     ##################
+    tf.reset_default_graph()
 
     """ Set up GPU """
     if gpu_id is not None:
@@ -228,30 +231,113 @@ def main(save_fn, gpu_id = None):
             saver.restore(sess, par['save_dir'] + par['ckpt_load_fn'])
             print('Model ' +  par['ckpt_load_fn'] + ' restored.')
 
-        for i in range(par['num_iterations']):
+        results = create_results_dict()
 
-            # generate batch of batch_train_size
-            trial_info = stim.generate_trial()
+        for k in range(par['num_network_iters']):
+            print('NETWORK ITERATION ', k)
+            for i in range(par['num_iterations']):
 
-            """
-            Run the model
-            """
+                # generate batch of batch_train_size
+                trial_info = stim.generate_trial()
 
-            _, total_loss, perf_loss, spike_loss, wiring_loss, state_hist, syn_x_hist, syn_u_hist = \
-                sess.run([model.train_op, model.total_loss, model.perf_losses, \
-                model.spike_losses, model.wiring_losses, model.networks_hidden, model.networks_syn_x, \
-                model.networks_syn_u], {x: trial_info['neural_input'], \
-                y: trial_info['desired_output'], mask: trial_info['train_mask']})
+                """
+                Run the model
+                """
+                _, total_loss, perf_loss, spike_loss, wiring_loss, network_output = sess.run([model.train_op, model.total_loss, model.perf_losses, \
+                    model.spike_losses, model.wiring_losses, model.networks_output], {x: trial_info['neural_input'], \
+                    y: trial_info['desired_output'], mask: trial_info['train_mask']})
 
-            if i%par['iters_between_outputs'] == 0:# and i != 0:
-                iterstr = 'Iter. {:>4}'.format(i)
-                lossstr = 'Total Loss: {:>7.4}'.format(total_loss)
-                perfstr = 'Perf. Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(perf_loss), np.std(perf_loss))
-                spikstr = 'Spike Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(spike_loss), np.std(spike_loss))
-                wirestr = 'Wiring Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(wiring_loss), np.std(wiring_loss))
+                if (i+1)%par['iters_between_outputs'] == 0:# and i != 0:
+                    accuracy = np.array([get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output])
+                    iteration_time = time.time() - t_start
+                    iterstr = 'Iter. {:>4}'.format(i)
+                    timestr = 'Time. {:>7.4}'.format(iteration_time)
+                    lossstr = 'Total Loss: {:>7.4}'.format(total_loss)
+                    #perfstr = 'Perf. Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(perf_loss), np.std(perf_loss))
+                    #spikstr = 'Spike Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(spike_loss), np.std(spike_loss))
+                    #wirestr = 'Wiring Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(wiring_loss), np.std(wiring_loss))
+                    perfstr = 'Perf. Loss: {:>7.4}'.format(np.mean(perf_loss))
+                    spikstr = 'Spike Loss: {:>7.4}'.format(np.mean(spike_loss))
+                    wirestr = 'Wiring Loss: {:>7.4}'.format(np.mean(wiring_loss))
+                    accuracystr = 'Accuracy: {:>7.4} +/- {:<7.4}'.format(np.mean(accuracy), np.std(accuracy))
 
-                print(' | '.join([str(x) for x in [iterstr, lossstr, perfstr, spikstr, wirestr]]))
+                    print(' | '.join([str(x) for x in [iterstr, timestr, perfstr, spikstr, wirestr, accuracystr]]))
+
+            save_data(results, k, network_output, trial_info)
+            update_dependencies()
+            sess.run(model.reset_weights)
+            sess.run(model.reset_adam_op)
 
 
+
+def save_data(results, k, network_output, trial_info):
+
+    # save data
+    ind = range(k*par['num_networks'], (k+1)*par['num_networks'])
+    accuracy = [get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output]
+    W_rnn, W_out, b_rnn, b_out = eval_weights()
+    results['W_rnn'][ind, :] = W_rnn
+    results['W_out'][ind, :] = W_out
+    results['b_rnn'][ind, :] = b_rnn
+    results['b_out'][ind, :] = b_out
+    results['accuracy'][ind] = np.array(accuracy)
+    pickle.dump(results, open(par['save_dir'] + par['save_fn'], 'wb') )
+
+
+def create_results_dict():
+
+    results = {
+        'W_rnn'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']*par['n_hidden']), dtype = np.float32),
+        'W_out'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']*par['n_output']), dtype = np.float32),
+        'b_rnn'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']), dtype = np.float32),
+        'b_out'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_output']), dtype = np.float32),
+        'accuracy'  : np.zeros((par['num_networks']*par['num_network_iters']), dtype = np.float32)}
+
+    return results
+
+def eval_weights():
+
+    W_rnn = np.zeros((par['num_networks'], par['n_hidden']*par['n_hidden']), dtype = np.float32)
+    W_out = np.zeros((par['num_networks'], par['n_hidden']*par['n_output']), dtype = np.float32)
+    b_rnn = np.zeros((par['num_networks'], par['n_hidden']), dtype = np.float32)
+    b_out = np.zeros((par['num_networks'], par['n_output']), dtype = np.float32)
+
+    for n in range(par['num_networks']):
+        with tf.variable_scope('network'+str(n), reuse=True):
+            x = tf.get_variable('W_rnn')
+            W_rnn[n, :] = np.reshape(x.eval(), (1, par['n_hidden']*par['n_hidden']))
+            x = tf.get_variable('W_out')
+            W_out[n, :] = np.reshape(x.eval(), (1, par['n_hidden']*par['n_output']))
+            x = tf.get_variable('b_rnn')
+            b_rnn[n, :] = np.reshape(x.eval(), (1, par['n_hidden']))
+            x = tf.get_variable('b_out')
+            b_out[n, :] = np.reshape(x.eval(), (1, par['n_output']))
+
+    return W_rnn, W_out, b_rnn, b_out
+
+def get_perf(y, y_hat, mask):
+
+    """
+    Calculate task accuracy by comparing the actual network output to the desired output
+    only examine time points when test stimulus is on
+    in another words, when y[0,:,:] is not 0
+    y is the desired output
+    y_hat is the actual output
+    """
+    y_hat = np.stack(y_hat, axis=1)
+    mask *= y[0,:,:]==0
+    mask_non_match = mask*(y[1,:,:]==1)
+    mask_match = mask*(y[2,:,:]==1)
+    y = np.argmax(y, axis = 0)
+    y_hat = np.argmax(y_hat, axis = 0)
+    accuracy = np.sum(np.float32(y == y_hat)*np.squeeze(mask))/np.sum(mask)
+
+    #accuracy_non_match = np.sum(np.float32(y == y_hat)*np.squeeze(mask_non_match))/np.sum(mask_non_match)
+    #accuracy_match = np.sum(np.float32(y == y_hat)*np.squeeze(mask_match))/np.sum(mask_match)
+
+    return accuracy
+
+"""
 if __name__ == '__main__':
     main('testing', str(sys.argv[1]))
+"""
