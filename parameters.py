@@ -27,7 +27,7 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 5,
+    'num_networks'          : 25,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
@@ -36,15 +36,15 @@ par = {
 
     # Timings and rates
     'dt'                    : 10,
-    'learning_rate'         : 1e-2,
+    'learning_rate'         : 4e-2,
     'membrane_time_constant': 100,
-    'connection_prob'       : 1,         # Usually 1
+    'connection_prob'       : 1.,         # Usually 1
 
     # Variance values
     'clip_max_grad_val'     : 1,
     'input_mean'            : 0.0,
     'noise_in_sd'           : 0.05,
-    'noise_rnn_sd'          : 0.2,
+    'noise_rnn_sd'          : 0.1,
 
     # Tuning function data
     'num_motion_dirs'       : 8,
@@ -62,21 +62,21 @@ par = {
     'U_std'                 : 0.45,
 
     # Training specs
-    'batch_train_size'      : 512,
-    'num_iterations'        : 1000,
+    'batch_train_size'      : 2048,
+    'num_iterations'        : 500,
     'iters_between_outputs' : 100,
-    'num_network_iters'     : 200,
+    'num_network_iters'     : 40,
 
     # Task specs
     'trial_type'            : 'DMS', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
     'rotation_match'        : 0,  # angular difference between matching sample and test
     'dead_time'             : 50,
-    'fix_time'              : 150,
-    'sample_time'           : 300,
+    'fix_time'              : 50,
+    'sample_time'           : 200,
     'delay_time'            : 400,
-    'test_time'             : 300,
+    'test_time'             : 200,
     'variable_delay_max'    : 300,
-    'mask_duration'         : 50,  # duration of traing mask after test onset
+    'mask_duration'         : 30,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
     'num_receptive_fields'  : 1,
     'num_rules'             : 1, # this will be two for the DMS+DMRS task
@@ -376,9 +376,10 @@ def update_dependencies():
         par['w_out0'].append(initialize([par['n_output'], par['n_hidden']], par['connection_prob']))
         if par['EI']:
             par['w_rnn0'].append(initialize(par['hidden_to_hidden_dims'], par['connection_prob']))
+            par['w_rnn0'][-1][:, par['ind_inh']] *= 4
             par['w_out0'][-1][:, par['ind_inh']] = 0
-            if par['synapse_config'] == None:
-                par['w_rnn0'][-1] = par['w_rnn0'][-1]/(spectral_radius(par['w_rnn0']))
+            #if par['synapse_config'] == None:
+                #par['w_rnn0'][-1] = par['w_rnn0'][-1]/(spectral_radius(par['w_rnn0']))
             for i in range(par['n_hidden']):
                 par['w_rnn0'][-1][i,i] = 0
             par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32) - np.eye(par['n_hidden'])
@@ -435,8 +436,10 @@ def update_dependencies():
             par['syn_u_init'][i,:] = par['U'][i,0]
 
 def initialize(dims, connection_prob):
-    w = np.random.gamma(shape=0.25, scale=1.0, size=dims)
-    #w = np.random.uniform(0,0.25, size=dims)
+    #w = np.random.gamma(shape=0.25, scale=1.0, size=dims)
+    w = np.random.uniform(0,0.25, size=dims)
+    #w = np.random.uniform(0,0.5, size=dims)**2
+    #w = np.minimum(1, -np.log(w))
     w *= (np.random.rand(*dims) < connection_prob)
     return np.float32(w)
 

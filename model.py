@@ -7,10 +7,12 @@ import tensorflow as tf
 import numpy as np
 import stimulus
 import time
-from parameters import *
+import parameters as p
+#from parameters import *
 import os, sys
 import pickle
 import AdamOpt
+import importlib
 
 # Ignore "use compiled version of TensorFlow" errors
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
@@ -25,13 +27,14 @@ class Model:
         self.mask = tf.unstack(mask, axis=0)
 
         # Load meta network state
-        self.W_in = tf.constant(par['W_in'], dtype=tf.float32)
-        self.W_ei = tf.constant(par['EI_matrix'], dtype=tf.float32)
-        self.hidden_init = tf.constant(par['h_init'], dtype=tf.float32)
+        self.W_in = tf.constant(p.par['W_in'], dtype=tf.float32)
+        self.W_in = tf.constant(p.par['W_in'], dtype=tf.float32)
+        self.W_ei = tf.constant(p.par['EI_matrix'], dtype=tf.float32)
+        self.hidden_init = tf.constant(p.par['h_init'], dtype=tf.float32)
 
         # Load the initial synaptic depression and facilitation to be used at the start of each trial
-        self.synapse_x_init = tf.constant(par['syn_x_init'])
-        self.synapse_u_init = tf.constant(par['syn_u_init'])
+        self.synapse_x_init = tf.constant(p.par['syn_x_init'])
+        self.synapse_u_init = tf.constant(p.par['syn_u_init'])
 
         # Declare all necessary variables for each network
         self.declare_variables()
@@ -44,12 +47,12 @@ class Model:
 
 
     def declare_variables(self):
-        for n in range(par['num_networks']):
+        for n in range(p.par['num_networks']):
             with tf.variable_scope('network'+str(n)):
-                tf.get_variable('W_rnn', initializer=par['w_rnn0'][n], trainable=True)
-                tf.get_variable('W_out', initializer=par['w_out0'][n], trainable=True)
-                tf.get_variable('b_rnn', shape=[par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-1e-6,1e-6), trainable=True)
-                tf.get_variable('b_out', shape=[par['n_output'], 1], initializer=tf.random_uniform_initializer(-1e-6,0.001), trainable=True)
+                tf.get_variable('W_rnn', initializer=p.par['w_rnn0'][n], trainable=True)
+                tf.get_variable('W_out', initializer=p.par['w_out0'][n], trainable=True)
+                tf.get_variable('b_rnn', shape=[p.par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-1e-6,1e-6), trainable=True)
+                tf.get_variable('b_out', shape=[p.par['n_output'], 1], initializer=tf.random_uniform_initializer(-1e-6,0.001), trainable=True)
 
 
     def run_model(self):
@@ -59,14 +62,14 @@ class Model:
         self.networks_syn_x = []
         self.networks_syn_u = []
 
-        for n in range(par['num_networks']):
+        for n in range(p.par['num_networks']):
             with tf.variable_scope('network'+str(n), reuse=True):
                 W_rnn = tf.get_variable('W_rnn')
                 W_out = tf.get_variable('W_out')
                 b_rnn = tf.get_variable('b_rnn')
                 b_out = tf.get_variable('b_out')
 
-            if par['EI']:
+            if p.par['EI']:
                 W_rnn = tf.matmul(tf.nn.relu(W_rnn), self.W_ei)
 
             hidden_state_hist = []
@@ -81,26 +84,26 @@ class Model:
             for t, x in enumerate(self.input_data):
 
                 # Calculate effect of STP
-                if par['synapse_config'] == 'std_stf':
+                if p.par['synapse_config'] == 'std_stf':
                     # implement both synaptic short term facilitation and depression
-                    syn_x += par['alpha_std']*(1-syn_x) - par['dt_sec']*syn_u*syn_x*h
-                    syn_u += par['alpha_stf']*(par['U']-syn_u) + par['dt_sec']*par['U']*(1-syn_u)*h
+                    syn_x += p.par['alpha_std']*(1-syn_x) - p.par['dt_sec']*syn_u*syn_x*h
+                    syn_u += p.par['alpha_stf']*(p.par['U']-syn_u) + p.par['dt_sec']*p.par['U']*(1-syn_u)*h
                     syn_x = tf.minimum(np.float32(1), tf.nn.relu(syn_x))
                     syn_u = tf.minimum(np.float32(1), tf.nn.relu(syn_u))
                     h_post = syn_u*syn_x*h
 
-                elif par['synapse_config'] == 'std':
+                elif p.par['synapse_config'] == 'std':
                     # implement synaptic short term derpression, but no facilitation
                     # we assume that syn_u remains constant at 1
-                    syn_x += par['alpha_std']*(1-syn_x) - par['dt_sec']*syn_x*h
+                    syn_x += p.par['alpha_std']*(1-syn_x) - p.par['dt_sec']*syn_x*h
                     syn_x = tf.minimum(np.float32(1), tf.nn.relu(syn_x))
                     syn_u = tf.minimum(np.float32(1), tf.nn.relu(syn_u))
                     h_post = syn_x*h
 
-                elif par['synapse_config'] == 'stf':
+                elif p.par['synapse_config'] == 'stf':
                     # implement synaptic short term facilitation, but no depression
                     # we assume that syn_x remains constant at 1
-                    syn_u += par['alpha_stf']*(par['U']-syn_u) + par['dt_sec']*par['U']*(1-syn_u)*h
+                    syn_u += p.par['alpha_stf']*(p.par['U']-syn_u) + p.par['dt_sec']*p.par['U']*(1-syn_u)*h
                     syn_u = tf.minimum(np.float32(1), tf.nn.relu(syn_u))
                     h_post = syn_u*h
 
@@ -113,9 +116,9 @@ class Model:
                 rnn_recur = tf.matmul(W_rnn, h_post)
 
                 # Compute rnn state
-                h = tf.nn.relu(h*(1-par['alpha_neuron']) \
-                    + par['alpha_neuron']*(rnn_input + rnn_recur + b_rnn) \
-                    + tf.random_normal([par['n_hidden'],par['batch_train_size']], 0, par['noise_rnn'], dtype=tf.float32))
+                h = tf.nn.relu(h*(1-p.par['alpha_neuron']) \
+                    + p.par['alpha_neuron']*(rnn_input + rnn_recur + b_rnn) \
+                    + tf.random_normal([p.par['n_hidden'],p.par['batch_train_size']], 0, p.par['noise_rnn'], dtype=tf.float32))
 
                 # Compute output state
                 output = tf.matmul(tf.nn.relu(W_out), h) + b_out
@@ -140,9 +143,9 @@ class Model:
         self.total_loss = tf.constant(0.)
 
         self.variables = [var for var in tf.trainable_variables() if not var.op.name.find('conv')==0]
-        adam_optimizer = AdamOpt.AdamOpt(self.variables, learning_rate = par['learning_rate'])
+        adam_optimizer = AdamOpt.AdamOpt(self.variables, learning_rate = p.par['learning_rate'])
 
-        for n in range(par['num_networks']):
+        for n in range(p.par['num_networks']):
 
             # Calculate performance loss
             perf_loss = [mask*tf.nn.softmax_cross_entropy_with_logits(logits = y_hat, labels = desired_output, dim=0) \
@@ -150,11 +153,11 @@ class Model:
             perf_loss = tf.reduce_mean(tf.stack(perf_loss, axis=0))
 
             # Calculate spiking loss
-            spike_loss = [par['spike_cost']*tf.reduce_mean(tf.square(h), axis=0) for h in self.networks_hidden[n]]
+            spike_loss = [p.par['spike_cost']*tf.reduce_mean(tf.square(h), axis=0) for h in self.networks_hidden[n]]
             spike_loss = tf.reduce_mean(tf.stack(spike_loss, axis=0))
 
             # Calculate wiring cost
-            wiring_loss = [par['wiring_cost']*tf.nn.relu(W_rnn*par['W_rnn_dist']) for W_rnn in tf.trainable_variables() if 'W_rnn' in W_rnn.name]
+            wiring_loss = [p.par['wiring_cost']*tf.nn.relu(W_rnn*p.par['W_rnn_dist']) for W_rnn in tf.trainable_variables() if 'W_rnn' in W_rnn.name]
             wiring_loss = tf.reduce_mean(tf.stack(wiring_loss, axis=0))
 
             # Add losses to record
@@ -179,11 +182,15 @@ class Model:
                 # reset biases to 0
                 reset_weights.append(tf.assign(var, var*0.))
             else:
-                for n in range(par['num_networks']):
+                for n in range(p.par['num_networks']):
+                    #new_weights = p.par['w_rnn_mask']*tf.random_normal([p.par['n_hidden'],p.par['n_hidden']], 0, p.par['noise_rnn'], dtype=tf.float32)
+                    new_weights = p.par['w_rnn_mask']*tf.random_uniform([p.par['n_hidden'],p.par['n_hidden']], 0, 0.25, dtype=tf.float32)
                     if 'network' + str(n) + '/W_rnn' in var.op.name:
-                        reset_weights.append(tf.assign(var, par['w_rnn0'][n]))
+                        reset_weights.append(tf.assign(var,new_weights))
                     elif 'network' + str(n) + '/W_out' in var.op.name:
-                        reset_weights.append(tf.assign(var, par['w_out0'][n]))
+                        #new_weights = tf.random_normal([p.par['n_output'],p.par['n_hidden']], 0, p.par['noise_rnn'], dtype=tf.float32)
+                        new_weights = tf.random_uniform([p.par['n_output'],p.par['n_hidden']], 0, 0.25, dtype=tf.float32)
+                        reset_weights.append(tf.assign(var, new_weights))
 
         self.reset_weights = tf.group(*reset_weights)
 
@@ -208,9 +215,9 @@ def main(gpu_id = None):
     model_performance = {'accuracy': [], 'par': [], 'task_list': []}
     stim = stimulus.Stimulus()
 
-    mask = tf.placeholder(tf.float32, shape=[par['num_time_steps'], par['batch_train_size']])
-    x = tf.placeholder(tf.float32, shape=[par['n_input'], par['num_time_steps'], par['batch_train_size']])
-    y = tf.placeholder(tf.float32, shape=[par['n_output'], par['num_time_steps'], par['batch_train_size']])
+    mask = tf.placeholder(tf.float32, shape=[p.par['num_time_steps'], p.par['batch_train_size']])
+    x = tf.placeholder(tf.float32, shape=[p.par['n_input'], p.par['num_time_steps'], p.par['batch_train_size']])
+    y = tf.placeholder(tf.float32, shape=[p.par['n_output'], p.par['num_time_steps'], p.par['batch_train_size']])
 
     """ Start TensorFlow session """
     with tf.Session() as sess:
@@ -227,18 +234,22 @@ def main(gpu_id = None):
 
         # Restore variables from previous model if desired
         saver = tf.train.Saver()
-        if par['load_previous_model']:
-            saver.restore(sess, par['save_dir'] + par['ckpt_load_fn'])
-            print('Model ' +  par['ckpt_load_fn'] + ' restored.')
+        if p.par['load_previous_model']:
+            saver.restore(sess, p.par['save_dir'] + p.par['ckpt_load_fn'])
+            print('Model ' +  p.par['ckpt_load_fn'] + ' restored.')
 
         results = create_results_dict()
 
-        for k in range(par['num_network_iters']):
+        for k in range(p.par['num_network_iters']):
             print('NETWORK ITERATION ', k)
-            for i in range(par['num_iterations']):
+            for i in range(p.par['num_iterations']):
 
                 # generate batch of batch_train_size
                 trial_info = stim.generate_trial()
+
+                # get the intiial weights
+                if i == 0:
+                    W_rnn0, W_out0 = get_initial_weights()
 
                 """
                 Run the model
@@ -247,7 +258,7 @@ def main(gpu_id = None):
                     model.spike_losses, model.wiring_losses, model.networks_output], {x: trial_info['neural_input'], \
                     y: trial_info['desired_output'], mask: trial_info['train_mask']})
 
-                if (i+1)%par['iters_between_outputs'] == 0:# and i != 0:
+                if (i+1)%p.par['iters_between_outputs'] == 0:# and i != 0:
                     accuracy = np.array([get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output])
                     iteration_time = time.time() - t_start
                     iterstr = 'Iter. {:>4}'.format(i)
@@ -263,55 +274,75 @@ def main(gpu_id = None):
 
                     print(' | '.join([str(x) for x in [iterstr, timestr, perfstr, spikstr, wirestr, accuracystr]]))
 
-            save_data(results, k, network_output, trial_info)
-            update_dependencies()
+            print('Saving data and reseting variables...')
+            save_data(results, k, network_output, trial_info, W_rnn0, W_out0)
             sess.run(model.reset_weights)
             sess.run(model.reset_adam_op)
 
 
 
-def save_data(results, k, network_output, trial_info):
+
+def get_initial_weights():
+
+    W_rnn0 = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32)
+    W_out0 = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32)
+    for n in range(p.par['num_networks']):
+        with tf.variable_scope('network'+str(n), reuse=True):
+            w = tf.get_variable('W_rnn')
+            w = w.eval()
+            W_rnn0[n,:] = np.reshape(w,(p.par['n_hidden']*p.par['n_hidden']))
+            w = tf.get_variable('W_out')
+            w = w.eval()
+            W_out0[n,:] = np.reshape(w,(p.par['n_hidden']*p.par['n_output']))
+
+    return W_rnn0, W_out0
+
+def save_data(results, k, network_output, trial_info, W_rnn0, W_out0):
 
     # save data
-    ind = range(k*par['num_networks'], (k+1)*par['num_networks'])
+    ind = range(k*p.par['num_networks'], (k+1)*p.par['num_networks'])
     accuracy = [get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output]
     W_rnn, W_out, b_rnn, b_out = eval_weights()
     results['W_rnn'][ind, :] = W_rnn
     results['W_out'][ind, :] = W_out
+    results['W_rnn0'][ind, :] = W_rnn0
+    results['W_out0'][ind, :] = W_out0
     results['b_rnn'][ind, :] = b_rnn
     results['b_out'][ind, :] = b_out
     results['accuracy'][ind] = np.array(accuracy)
-    pickle.dump(results, open(par['save_dir'] + par['save_fn'], 'wb') )
+    pickle.dump(results, open(p.par['save_dir'] + p.par['save_fn'], 'wb') )
 
 
 def create_results_dict():
 
     results = {
-        'W_rnn'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']*par['n_hidden']), dtype = np.float32),
-        'W_out'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']*par['n_output']), dtype = np.float32),
-        'b_rnn'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_hidden']), dtype = np.float32),
-        'b_out'     : np.zeros((par['num_networks']*par['num_network_iters'], par['n_output']), dtype = np.float32),
-        'accuracy'  : np.zeros((par['num_networks']*par['num_network_iters']), dtype = np.float32)}
+        'W_rnn'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32),
+        'W_out'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32),
+        'W_rnn0'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32),
+        'W_out0'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32),
+        'b_rnn'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']), dtype = np.float32),
+        'b_out'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_output']), dtype = np.float32),
+        'accuracy'  : np.zeros((p.par['num_networks']*p.par['num_network_iters']), dtype = np.float32)}
 
     return results
 
 def eval_weights():
 
-    W_rnn = np.zeros((par['num_networks'], par['n_hidden']*par['n_hidden']), dtype = np.float32)
-    W_out = np.zeros((par['num_networks'], par['n_hidden']*par['n_output']), dtype = np.float32)
-    b_rnn = np.zeros((par['num_networks'], par['n_hidden']), dtype = np.float32)
-    b_out = np.zeros((par['num_networks'], par['n_output']), dtype = np.float32)
+    W_rnn = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32)
+    W_out = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32)
+    b_rnn = np.zeros((p.par['num_networks'], p.par['n_hidden']), dtype = np.float32)
+    b_out = np.zeros((p.par['num_networks'], p.par['n_output']), dtype = np.float32)
 
-    for n in range(par['num_networks']):
+    for n in range(p.par['num_networks']):
         with tf.variable_scope('network'+str(n), reuse=True):
             x = tf.get_variable('W_rnn')
-            W_rnn[n, :] = np.reshape(x.eval(), (1, par['n_hidden']*par['n_hidden']))
+            W_rnn[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']*p.par['n_hidden']))
             x = tf.get_variable('W_out')
-            W_out[n, :] = np.reshape(x.eval(), (1, par['n_hidden']*par['n_output']))
+            W_out[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']*p.par['n_output']))
             x = tf.get_variable('b_rnn')
-            b_rnn[n, :] = np.reshape(x.eval(), (1, par['n_hidden']))
+            b_rnn[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']))
             x = tf.get_variable('b_out')
-            b_out[n, :] = np.reshape(x.eval(), (1, par['n_output']))
+            b_out[n, :] = np.reshape(x.eval(), (1, p.par['n_output']))
 
     return W_rnn, W_out, b_rnn, b_out
 
