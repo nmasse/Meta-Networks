@@ -57,6 +57,7 @@ class Model:
                 w_rnn_inh0 = 4*tf.random_uniform([p.par['n_hidden'],p.par['num_inh']//2], 0, 0.25, dtype=tf.float32)
                 w_rnn_inh1 = 4*tf.random_uniform([p.par['n_hidden'],p.par['num_inh']//2], 0, 0.25, dtype=tf.float32)
                 w_rnn = p.par['w_rnn_mask']*tf.concat([w_rnn_exc0, w_rnn_inh0,w_rnn_exc1, w_rnn_inh1],axis=1)
+
                 w_out_exc0 = tf.random_uniform([p.par['n_output'],p.par['num_exc']//2], 0, 0.25, dtype=tf.float32)
                 w_out_inh0 = tf.zeros([p.par['n_output'],p.par['num_inh']//2],dtype=tf.float32)
                 w_out_exc1 = tf.random_uniform([p.par['n_output'],p.par['num_exc']//2], 0, 0.25, dtype=tf.float32)
@@ -185,32 +186,6 @@ class Model:
 
         self.train_op = adam_optimizer.compute_gradients(self.total_loss)
         self.reset_adam_op = adam_optimizer.reset_params()
-        self.reset_weights()
-
-
-    def reset_weights(self):
-
-        reset_weights = []
-
-        for var in tf.trainable_variables():
-            if 'b' in var.op.name:
-                # reset biases to 0
-                print('Assinging ', var.op.name)
-                reset_weights.append(tf.assign(var, var*0.))
-            else:
-                for n in range(p.par['num_networks']):
-                    #new_weights = p.par['w_rnn_mask']*tf.random_normal([p.par['n_hidden'],p.par['n_hidden']], 0, p.par['noise_rnn'], dtype=tf.float32)
-                    new_weights = p.par['w_rnn_mask']*tf.random_uniform([p.par['n_hidden'],p.par['n_hidden']], 0, 0.25, dtype=tf.float32)
-                    if 'network' + str(n) + '/W_rnn' in var.op.name:
-                        print('Assinging ', var.op.name)
-                        reset_weights.append(tf.assign(var,new_weights))
-                    elif 'network' + str(n) + '/W_out' in var.op.name:
-                        print('Assinging ', var.op.name)
-                        #new_weights = tf.random_normal([p.par['n_output'],p.par['n_hidden']], 0, p.par['noise_rnn'], dtype=tf.float32)
-                        new_weights = tf.random_uniform([p.par['n_output'],p.par['n_hidden']], 0, 0.25, dtype=tf.float32)
-                        reset_weights.append(tf.assign(var, new_weights))
-
-        self.reset_weights = tf.group(*reset_weights)
 
 
 def main(gpu_id = None):
@@ -294,7 +269,6 @@ def main(gpu_id = None):
 
             print('Saving data and reseting variables...')
             save_data(results, k, network_output, trial_info, W_rnn0, W_out0)
-            #sess.run(model.reset_weights)
             sess.run(model.reset_adam_op)
             init = tf.global_variables_initializer()
             sess.run(init)
