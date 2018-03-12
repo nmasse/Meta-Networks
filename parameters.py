@@ -27,12 +27,15 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 25,
+    'num_networks'          : 2,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
     'n_hidden'              : 50,
     'n_output'              : 3,
+    'encoder_dims'          : [50*50+50*3, 1500, 500],
+    'decoder_dims'          : [10, 500, 1500, 50*50+50*3],
+    'latent_dims'           : 10,
 
     # Timings and rates
     'dt'                    : 10,
@@ -267,6 +270,9 @@ def update_dependencies():
     # at each time step
     par['noise_rnn'] = np.sqrt(2*par['alpha_neuron'])*par['noise_rnn_sd']
     par['noise_in'] = np.sqrt(2/par['alpha_neuron'])*par['noise_in_sd'] # since term will be multiplied by par['alpha_neuron']
+
+    par['num_exc'] = int(par['n_hidden']*par['exc_inh_prop'])
+    par['num_inh'] = int(par['n_hidden'] - par['num_exc'])
 
 
     # General event profile info
