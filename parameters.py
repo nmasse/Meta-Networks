@@ -27,7 +27,7 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 2,
+    'num_networks'          : 25,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
@@ -75,9 +75,9 @@ par = {
     'rotation_match'        : 0,  # angular difference between matching sample and test
     'dead_time'             : 50,
     'fix_time'              : 50,
-    'sample_time'           : 200,
-    'delay_time'            : 400,
-    'test_time'             : 200,
+    'sample_time'           : 100,
+    'delay_time'            : 500,
+    'test_time'             : 100,
     'variable_delay_max'    : 300,
     'mask_duration'         : 30,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
