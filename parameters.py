@@ -16,7 +16,7 @@ rnd_save_suffix = np.random.randint(10000)
 
 par = {
     # Setup parameters
-    'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
+    'save_dir'              : 'C:/Users/nicol/Projects/GitHub/Meta-Networks/savedir/',
     'debug_model'           : False,
     'load_previous_model'   : False,
     'analyze_model'         : True,
@@ -33,13 +33,13 @@ par = {
     'num_rule_tuned'        : 0,
     'n_hidden'              : 50,
     'n_output'              : 3,
-    'encoder_dims'          : [50*50+50*3, 1500, 500],
-    'decoder_dims'          : [10, 500, 1500, 50*50+50*3],
-    'latent_dims'           : 10,
+    'n_latent'              : 10,
+    'num_weights'           : int(50**2 + 50*3),
+
 
     # Timings and rates
     'dt'                    : 10,
-    'learning_rate'         : 4e-2,
+    'learning_rate'         : 1e-3,
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
@@ -57,6 +57,8 @@ par = {
     # Cost parameters
     'spike_cost'            : 1e-7,
     'wiring_cost'           : 1e-1,
+    'beta'                  : 1e-8,
+    'accuracy_cost'         : 1.,
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
@@ -65,8 +67,8 @@ par = {
     'U_std'                 : 0.45,
 
     # Training specs
-    'batch_train_size'      : 2048,
-    'num_iterations'        : 500,
+    'batch_train_size'      : 256,
+    'num_iterations'        : 20000,
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
 
@@ -100,31 +102,10 @@ par = {
     'suppress_analysis'     : False,
     'analyze_tuning'        : False,
 
-
-    'ABBA_delay'            : 0
+    'accuracy_threshold'    : 0.75,
+    'file_prefix'           : 'DM'
 }
 
-"""
-Parameters to be used before running analysis
-"""
-analysis_par = {
-    'analyze_model'         : True,
-    'load_previous_model'   : True,
-    'num_iterations'        : 1,
-    'batch_train_size'      : 1024,
-    'var_delay'             : False,
-    'learning_rate'         : 0,
-    'catch_trial_pct'       : 0.0,
-}
-
-"""
-Parameters to be used after running analysis
-"""
-revert_analysis_par = {
-    'analyze_model'         : True,
-    'load_previous_model'   : False,
-    'decoding_test_mode'    : False
-}
 
 
 """
@@ -240,6 +221,10 @@ def update_dependencies():
     par['n_input'] = par['num_motion_tuned'] + par['num_fix_tuned'] + par['num_rule_tuned']
     # General network shape
     par['shape'] = (par['n_input'], par['n_hidden'], par['n_output'])
+
+    par['encoder_dims'] = [par['num_weights'], 1000, 1000]
+    par['decoder_dims'] = [par['n_latent'], 1000, 1000, par['num_weights']]
+    par['accuracy_dims'] = [par['n_latent'], 1]
 
     # Possible rules based on rule type values
     #par['possible_rules'] = [par['num_receptive_fields'], par['num_categorizations']]
