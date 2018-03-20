@@ -16,7 +16,8 @@ rnd_save_suffix = np.random.randint(10000)
 
 par = {
     # Setup parameters
-    'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
+    #'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
+    'save_dir'              : './savedir/',
     'debug_model'           : False,
     'load_previous_model'   : False,
     'analyze_model'         : True,
@@ -39,7 +40,7 @@ par = {
 
     # Timings and rates
     'dt'                    : 10,
-    'learning_rate'         : 4e-2,
+    'learning_rate'         : 2e-2,
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
@@ -56,7 +57,7 @@ par = {
 
     # Cost parameters
     'spike_cost'            : 1e-7,
-    'wiring_cost'           : 1e-1,
+    'wiring_cost'           : 1e-2, # 1e-1
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
@@ -65,8 +66,8 @@ par = {
     'U_std'                 : 0.45,
 
     # Training specs
-    'batch_train_size'      : 2048,
-    'num_iterations'        : 500,
+    'batch_train_size'      : 1024, #512
+    'num_iterations'        : 3200, #1200
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
 
@@ -76,10 +77,10 @@ par = {
     'dead_time'             : 50,
     'fix_time'              : 50,
     'sample_time'           : 100,
-    'delay_time'            : 500,
+    'delay_time'            : 400, #400
     'test_time'             : 100,
-    'variable_delay_max'    : 300,
-    'mask_duration'         : 30,  # duration of traing mask after test onset
+    'variable_delay_max'    : 200, #300
+    'mask_duration'         : 40,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
     'num_receptive_fields'  : 1,
     'num_rules'             : 1, # this will be two for the DMS+DMRS task
@@ -202,13 +203,13 @@ def update_trial_params():
     elif par['trial_type'] == 'DMS+DMRS' or par['trial_type'] == 'DMS+DMRS_early_cue':
 
         par['num_rules'] = 2
-        par['num_rule_tuned'] = 12
+        par['num_rule_tuned'] = 8
         if par['trial_type'] == 'DMS+DMRS':
             par['rotation_match'] = [0, 90]
-            par['rule_onset_time'] = par['dead_time']+par['fix_time']+par['sample_time'] + 500
-            par['rule_offset_time'] = par['dead_time']+par['fix_time']+par['sample_time'] + 750
+            par['rule_onset_time'] = par['dead_time']+par['fix_time']+par['sample_time'] + 100
+            par['rule_offset_time'] = par['dead_time']+par['fix_time']+par['sample_time'] + par['delay_time'] + par['test_time']
         else:
-            par['rotation_match'] = [0, 45]
+            par['rotation_match'] = [0, 90]
             par['rule_onset_time'] = par['dead_time']
             par['rule_offset_time'] = par['dead_time']+par['fix_time']+par['sample_time']
 
@@ -238,6 +239,7 @@ def update_dependencies():
 
     # Number of input neurons
     par['n_input'] = par['num_motion_tuned'] + par['num_fix_tuned'] + par['num_rule_tuned']
+
     # General network shape
     par['shape'] = (par['n_input'], par['n_hidden'], par['n_output'])
 
@@ -297,7 +299,7 @@ def update_dependencies():
     par['h_init'] = 0.5*np.ones((par['n_hidden'], par['batch_train_size']), dtype=np.float32)
     par['h_init'][par['ind_inh']] = 2.0
 
-    par['input_to_hidden_dims'] = [par['n_hidden'], par['n_input']]
+    par['input_to_hidden_dims'] = [par['n_hidden'], par['num_motion_tuned']]
     par['hidden_to_hidden_dims'] = [par['n_hidden'], par['n_hidden']]
 
 
@@ -305,7 +307,7 @@ def update_dependencies():
     par['W_in'] = np.zeros(par['input_to_hidden_dims'])
 
 
-    stim_dirs = np.float32(np.arange(0,360,360/par['n_input']))[np.newaxis,:]
+    stim_dirs = np.float32(np.arange(0,360,360/par['num_motion_tuned']))[np.newaxis,:]
     exc_dirs = np.float32(np.arange(0,360,360/20))[:,np.newaxis]
     inh_dirs = np.float32(np.arange(0,360,360/5))[:,np.newaxis]
 
@@ -374,6 +376,9 @@ def update_dependencies():
     par['w_out_mask'] = np.ones((par['n_output'], par['n_hidden']), dtype=np.float32)
     if par['EI']:
         par['w_out_mask'][:, par['ind_inh']] = 0
+    par['w_out_mask'][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
+    par['w_rule_mask'] = np.ones((par['n_hidden'], par['num_rule_tuned']), dtype=np.float32)
+    par['w_rule_mask'][:25, :] = 0.
 
     print('Generating random initial weights...')
     par['w_rnn0'] = []
@@ -384,6 +389,7 @@ def update_dependencies():
             par['w_rnn0'].append(initialize(par['hidden_to_hidden_dims'], par['connection_prob']))
             par['w_rnn0'][-1][:, par['ind_inh']] *= 4
             par['w_out0'][-1][:, par['ind_inh']] = 0
+            par['w_out0'][-1][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
             #if par['synapse_config'] == None:
                 #par['w_rnn0'][-1] = par['w_rnn0'][-1]/(spectral_radius(par['w_rnn0']))
             for i in range(par['n_hidden']):
@@ -392,6 +398,7 @@ def update_dependencies():
         else:
             par['w_rnn0'].append(0.54*np.eye(par['n_hidden']))
             par['w_rnn_mask'] = np.ones((par['hidden_to_hidden_dims']), dtype=np.float32)
+
 
 
 
