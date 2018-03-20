@@ -133,8 +133,8 @@ def main(gpu_id = None):
             """
             Run the model
             """
-            _, recotruction_loss, latent_loss, accuracy_loss, loss = sess.run([model.train_op, model.recotruction_loss, \
-                model.latent_loss, model.accuracy_loss, model.loss], {x: network_params, y: accuracies})
+            _, recotruction_loss, latent_loss, accuracy_loss, loss, latent_mu = sess.run([model.train_op, model.recotruction_loss, \
+                model.latent_loss, model.accuracy_loss, model.loss, model.latent_mu], {x: network_params, y: accuracies})
             model_performance['recotruction_loss'].append(recotruction_loss)
             model_performance['latent_loss'].append(latent_loss)
             model_performance['accuracy_loss'].append(accuracy_loss)
@@ -153,7 +153,7 @@ def main(gpu_id = None):
         W_deocder, b_decoder, W_accuracy, b_accuracy = eval_weights()
         z = output_prototypes(W_deocder, b_decoder)
         results = {'W_deocder': W_deocder, 'b_decoder': b_decoder, 'W_accuracy': W_accuracy, 'b_accuracy': b_accuracy, \
-            'z': z, 'model_performance': model_performance}
+            'z': z, 'model_performance': model_performance, 'latent_mu': latent_mu}
         pickle.dump(results, open(par['save_dir'] + 'autoencoder_results.pkl', 'wb') )
         for j in range(len(z)):
             plt.imshow(z[j], aspect = 'auto', interpolation = 'none')
