@@ -16,12 +16,8 @@ rnd_save_suffix = np.random.randint(10000)
 
 par = {
     # Setup parameters
-<<<<<<< HEAD
     #'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
     'save_dir'              : './savedir/',
-=======
-    'save_dir'              : 'C:/Users/nicol/Projects/GitHub/Meta-Networks/savedir/',
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
     'debug_model'           : False,
     'load_previous_model'   : False,
     'analyze_model'         : True,
@@ -32,7 +28,7 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 25,
+    'num_networks'          : 3,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
@@ -41,14 +37,16 @@ par = {
     'n_latent'              : 10,
     'num_weights'           : int(50**2 + 50*3),
 
+    'generator_dims'    : [10, 100, 500],
+    'wrnn_generator_dims': [500, 50**2],
+    'wout_generator_dims': [500, 50*3],
+    'brnn_generator_dims': [500, 50],
+    'bout_generator_dims': [500, 3],
+
 
     # Timings and rates
-    'dt'                    : 10,
-<<<<<<< HEAD
-    'learning_rate'         : 2e-2,
-=======
+    'dt'                    : 20,
     'learning_rate'         : 1e-3,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
@@ -65,13 +63,10 @@ par = {
 
     # Cost parameters
     'spike_cost'            : 1e-7,
-<<<<<<< HEAD
     'wiring_cost'           : 1e-2, # 1e-1
-=======
-    'wiring_cost'           : 1e-1,
     'beta'                  : 1e-8,
     'accuracy_cost'         : 1.,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
+
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
@@ -79,14 +74,9 @@ par = {
     'U_stf'                 : 0.15,
     'U_std'                 : 0.45,
 
-    # Training specs
-<<<<<<< HEAD
-    'batch_train_size'      : 1024, #512
-    'num_iterations'        : 3200, #1200
-=======
-    'batch_train_size'      : 256,
+    # Training spec
+    'batch_train_size'      : 64,
     'num_iterations'        : 20000,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
 
