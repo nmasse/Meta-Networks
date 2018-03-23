@@ -16,12 +16,8 @@ rnd_save_suffix = np.random.randint(10000)
 
 par = {
     # Setup parameters
-<<<<<<< HEAD
     #'save_dir'              : '/media/masse/MySSDataStor1/Network Dataset/',
     'save_dir'              : './savedir/',
-=======
-    'save_dir'              : 'C:/Users/nicol/Projects/GitHub/Meta-Networks/savedir/',
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
     'debug_model'           : False,
     'load_previous_model'   : False,
     'analyze_model'         : True,
@@ -32,23 +28,19 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-    'num_networks'          : 25,
+    'num_networks'          : 5,
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
     'n_hidden'              : 50,
     'n_output'              : 3,
-    'n_latent'              : 10,
-    'num_weights'           : int(50**2 + 50*3),
+    'n_latent'              : 200,
+    'num_weights'           : int(50**2 + 50*3 + 50 + 3),
 
 
     # Timings and rates
     'dt'                    : 10,
-<<<<<<< HEAD
-    'learning_rate'         : 2e-2,
-=======
-    'learning_rate'         : 1e-3,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
+    'learning_rate'         : 1e-2,
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
@@ -64,41 +56,32 @@ par = {
     'kappa'                 : 2,        # concentration scaling factor for von Mises
 
     # Cost parameters
-    'spike_cost'            : 1e-7,
-<<<<<<< HEAD
-    'wiring_cost'           : 1e-2, # 1e-1
-=======
-    'wiring_cost'           : 1e-1,
-    'beta'                  : 1e-8,
-    'accuracy_cost'         : 1.,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
+    'spike_cost'            : 1e-8,
+    'wiring_cost'           : 2e-2,
+    'beta'                  : 4e-5,
+    'accuracy_cost'         : 0.,
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
-    'tau_slow'              : 1500,
+    'tau_slow'              : 2500,
     'U_stf'                 : 0.15,
     'U_std'                 : 0.45,
 
     # Training specs
-<<<<<<< HEAD
-    'batch_train_size'      : 1024, #512
-    'num_iterations'        : 3200, #1200
-=======
-    'batch_train_size'      : 256,
-    'num_iterations'        : 20000,
->>>>>>> 9366c3d533da7a0bd0f7c4ade2e7f18f1c716523
+    'batch_train_size'      : 1024,
+    'num_iterations'        : 1500,
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
 
     # Task specs
-    'trial_type'            : 'DMS', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
+    'trial_type'            : 'DMC', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
     'rotation_match'        : 0,  # angular difference between matching sample and test
     'dead_time'             : 50,
     'fix_time'              : 50,
     'sample_time'           : 100,
-    'delay_time'            : 400, #400
+    'delay_time'            : 500, #400
     'test_time'             : 100,
-    'variable_delay_max'    : 200, #300
+    'variable_delay_max'    : 300, #300
     'mask_duration'         : 40,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
     'num_receptive_fields'  : 1,
@@ -120,8 +103,8 @@ par = {
     'suppress_analysis'     : False,
     'analyze_tuning'        : False,
 
-    'accuracy_threshold'    : 0.75,
-    'file_prefix'           : 'DM'
+    'accuracy_threshold'    : 0.9,
+    'file_prefix'           : 'DMC'
 }
 
 
@@ -241,8 +224,8 @@ def update_dependencies():
     # General network shape
     par['shape'] = (par['n_input'], par['n_hidden'], par['n_output'])
 
-    par['encoder_dims'] = [par['num_weights'], 1000, 1000]
-    par['decoder_dims'] = [par['n_latent'], 1000, 1000, par['num_weights']]
+    par['encoder_dims'] = [par['num_weights'], 1500, 1500, 1500, 1500]
+    par['decoder_dims'] = [par['n_latent'], 1500, 1500, 1500, par['num_weights']]
     par['accuracy_dims'] = [par['n_latent'], 1]
 
     # Possible rules based on rule type values
@@ -378,9 +361,9 @@ def update_dependencies():
     par['w_out_mask'] = np.ones((par['n_output'], par['n_hidden']), dtype=np.float32)
     if par['EI']:
         par['w_out_mask'][:, par['ind_inh']] = 0
-    par['w_out_mask'][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
+    #par['w_out_mask'][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
     par['w_rule_mask'] = np.ones((par['n_hidden'], par['num_rule_tuned']), dtype=np.float32)
-    par['w_rule_mask'][:25, :] = 0.
+    #par['w_rule_mask'][:25, :] = 0.
 
     print('Generating random initial weights...')
     par['w_rnn0'] = []
@@ -391,7 +374,7 @@ def update_dependencies():
             par['w_rnn0'].append(initialize(par['hidden_to_hidden_dims'], par['connection_prob']))
             par['w_rnn0'][-1][:, par['ind_inh']] *= 4
             par['w_out0'][-1][:, par['ind_inh']] = 0
-            par['w_out0'][-1][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
+            #par['w_out0'][-1][:,:25] = 0 # neurons receiving input from input layer cannot project to output layer
             #if par['synapse_config'] == None:
                 #par['w_rnn0'][-1] = par['w_rnn0'][-1]/(spectral_radius(par['w_rnn0']))
             for i in range(par['n_hidden']):
