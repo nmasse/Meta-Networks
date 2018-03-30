@@ -24,12 +24,18 @@ class Motifs:
         self.print_motif_list()
 
 
-    def make_matrix(self, filename):
+    def make_matrix(self, filename, method):
         x = pickle.load(open(filename, 'rb'))
         beh_threshold = 0.1
+        val_th = 0.25
+        N = 36
 
-        significant_weights_rnn = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_rnn'][0,:,:] > beh_threshold
-        significant_weights_out = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_out'][0,:,:] > beh_threshold
+        if method == 'lesion':
+            significant_weights_rnn = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_rnn'][0,:,:] > beh_threshold
+            significant_weights_out = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_out'][0,:,:] > beh_threshold
+        elif method == 'value':
+            significant_weights_rnn = x['weights_hist'][N]['w_rnn'] > val_th
+            significant_weights_rnn = x['weights_hist'][N]['w_out'] > val_th
         W = np.vstack((significant_weights_rnn, significant_weights_out))
         d = W.shape[0] - W.shape[1]
         W = np.hstack((W, np.zeros((W.shape[0], d))))

@@ -281,7 +281,7 @@ def calc_svm(lin_clf, y, train_conds, test_conds, train_ind, test_ind):
     return score
 
 
-def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time):
+def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time, gate):
 
     lesion_results = {'lesion_accuracy_rnn': np.ones((par['num_rules'], par['n_hidden'],par['n_hidden']), dtype=np.float32),
                       'lesion_accuracy_out': np.ones((par['num_rules'], 3,par['n_hidden']), dtype=np.float32)}
@@ -344,7 +344,7 @@ def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time):
                 weights_new['w_rnn'] *= q
 
                 # simulate network
-                y_hat, hidden_state_hist, _, _ = run_model(x, hidden_init, syn_x_init, syn_u_init, weights_new)
+                y_hat, hidden_state_hist, _, _ = run_model(x, hidden_init, syn_x_init, syn_u_init, weights_new, gate)
                 lesion_results['lesion_accuracy_rnn'][r,n1,n2],_,_ = get_perf(y, y_hat, train_mask)
 
                 #y_hat, _, _, _ = run_model(x_test, hidden_init_test, syn_x_init_test, syn_u_init_test, weights_new)

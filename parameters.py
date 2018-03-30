@@ -28,11 +28,7 @@ par = {
     'var_delay'             : True,
 
     # Network shape
-<<<<<<< HEAD
-    'num_networks'          : 50,
-=======
     'num_networks'          : 3,
->>>>>>> 27a40217286fd3968ffa11d23fb7e24832567a6e
     'num_motion_tuned'      : 36,
     'num_fix_tuned'         : 0,
     'num_rule_tuned'        : 0,
@@ -55,13 +51,8 @@ par = {
 
 
     # Timings and rates
-<<<<<<< HEAD
-    'dt'                    : 10,
-    'learning_rate'         : 5e-3,
-=======
     'dt'                    : 20,
     'learning_rate'         : 1e-3,
->>>>>>> 27a40217286fd3968ffa11d23fb7e24832567a6e
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
@@ -77,18 +68,11 @@ par = {
     'kappa'                 : 2,        # concentration scaling factor for von Mises
 
     # Cost parameters
-<<<<<<< HEAD
-    'spike_cost'            : 1e-4,
-    'wiring_cost'           : 0.,
-    'beta'                  : 4e-5,
-    'accuracy_cost'         : 0.,
-=======
     'spike_cost'            : 1e-7,
     'wiring_cost'           : 1e-2, # 1e-1
     'beta'                  : 1e-8,
     'accuracy_cost'         : 1.,
 
->>>>>>> 27a40217286fd3968ffa11d23fb7e24832567a6e
 
     # Synaptic plasticity specs
     'tau_fast'              : 200,
@@ -96,20 +80,11 @@ par = {
     'U_stf'                 : 0.15,
     'U_std'                 : 0.45,
 
-<<<<<<< HEAD
-    # Training specs
-    'batch_train_size'      : 1024,
-    'num_iterations'        : 1000,
-    'iters_between_outputs' : 20,
-    'num_network_iters'     : 4000,
-    'regenerate_var_prob'   : 0.001,
-=======
     # Training spec
     'batch_train_size'      : 64,
     'num_iterations'        : 20000,
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
->>>>>>> 27a40217286fd3968ffa11d23fb7e24832567a6e
 
     # Task specs
     'trial_type'            : 'DMS', # allowable types: DMS, DMRS45, DMRS90, DMRS180, DMC, DMS+DMRS, ABBA, ABCA, dualDMS
