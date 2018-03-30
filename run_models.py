@@ -1,12 +1,12 @@
 import numpy as np
 from parameters import *
-import model
+import model_elimination
 import sys
 
-task = 'DMC'
+task = 'DMRS90'
 
-for j in range(0,1000,2):
-    save_fn = task + '_' + str(j) + '.pkl'
+for j in range(10):
+    save_fn = 'elim_' + task + '_' + str(j) + '.pkl'
     updates = {'trial_type': task, 'save_fn': save_fn}
     update_parameters(updates)
 
@@ -21,6 +21,6 @@ for j in range(0,1000,2):
             quit('Error: Select a valid GPU number.')
 
         # Run model
-        model.main(sys.argv[1])
+        model_elimination.main(sys.argv[1])
     except KeyboardInterrupt:
         quit('Quit by KeyboardInterrupt')

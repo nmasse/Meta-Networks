@@ -56,12 +56,18 @@ class AdamOpt:
         self.update_var_op = []
 
         for (grads, _), var in zip(self.gradients, self.variables):
+            print(var.name)
             if 'W_rnn' in var.name:
+                #pass
                 grads *= par['w_rnn_mask']
                 print('Applied weight mask to w_rnn')
             elif 'W_out' in var.name:
+                #pass
                 grads *= par['w_out_mask']
                 print('Applied weight mask to w_out')
+            elif 'W_rule' in var.name:
+                grads *= par['w_rule_mask']
+                print('Applied weight mask to w_rule')
             grads = tf.clip_by_norm(grads, par['clip_max_grad_val'])
             new_m = self.beta1*self.m[var.op.name] + (1-self.beta1)*grads
             new_v = self.beta2*self.v[var.op.name] + (1-self.beta2)*grads*grads

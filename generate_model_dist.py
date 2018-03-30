@@ -13,25 +13,27 @@ import os, sys
 import pickle
 import AdamOpt
 import importlib
+import matplotlib.pyplot as plt
 
 # Ignore "use compiled version of TensorFlow" errors
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 class Model:
 
-    def __init__(self, motion_in, rule_in, target_data, mask):
+    def __init__(self, input_data, target_data, mask, generator_var):
 
         # Load the input activity, the target data, and the training mask for this batch of trials
-        self.motion_data = tf.unstack(motion_in, axis=1)
-        self.rule_data = tf.unstack(rule_in, axis=1)
+        self.input_data = tf.unstack(input_data, axis=1)
         self.target_data = tf.unstack(target_data, axis=1)
         self.mask = tf.unstack(mask, axis=0)
+        self.generator_var = tf.unstack(generator_var, axis=0)
 
         # Load meta network state
         self.W_in = tf.constant(p.par['W_in'], dtype=tf.float32)
-        self.W_in = tf.constant(p.par['W_in'], dtype=tf.float32)
         self.W_ei = tf.constant(p.par['EI_matrix'], dtype=tf.float32)
         self.hidden_init = tf.constant(p.par['h_init'], dtype=tf.float32)
+        self.w_rnn_mask = tf.constant(p.par['w_rnn_mask'], dtype=tf.float32)
+        self.w_out_mask = tf.constant(p.par['w_out_mask'], dtype=tf.float32)
 
         # Load the initial synaptic depression and facilitation to be used at the start of each trial
         self.synapse_x_init = tf.constant(p.par['syn_x_init'])
@@ -48,40 +50,28 @@ class Model:
 
 
     def declare_variables(self):
-        for n in range(p.par['num_networks']):
-            with tf.variable_scope('network'+str(n)):
-                #tf.get_variable('W_rnn', initializer=p.par['w_rnn0'][n], trainable=True)
-                #tf.get_variable('W_out', initializer=p.par['w_out0'][n], trainable=True)
 
-                #w_rnn_exc0 = tf.random_uniform([p.par['n_hidden'],p.par['num_exc']//2], 0, 0.25, dtype=tf.float32)
-                w_rnn_exc0 = tf.random_gamma([p.par['n_hidden'],p.par['num_exc']//2], 0.25, 1, dtype=tf.float32)
-                w_rnn_exc1 = tf.random_gamma([p.par['n_hidden'],p.par['num_exc']//2], 0.25, 1, dtype=tf.float32)
-                w_rnn_exc0 = tf.random_gamma([p.par['n_hidden'],p.par['num_exc']//2], 0.25, 1, dtype=tf.float32)
-                w_rnn_inh0 = 4*tf.random_gamma([p.par['n_hidden'],p.par['num_inh']//2], 0.25, 1, dtype=tf.float32)
-                w_rnn_inh1 = 4*tf.random_gamma([p.par['n_hidden'],p.par['num_inh']//2], 0.25, 1, dtype=tf.float32)
-                w_rnn = p.par['w_rnn_mask']*tf.concat([w_rnn_exc0, w_rnn_inh0,w_rnn_exc1, w_rnn_inh1],axis=1)
-
-                w_out_exc0 = tf.random_gamma([p.par['n_output'],p.par['num_exc']//2], 0.25, 1, dtype=tf.float32)
-                w_out_inh0 = tf.zeros([p.par['n_output'],p.par['num_inh']//2],dtype=tf.float32)
-                w_out_exc1 = tf.random_gamma([p.par['n_output'],p.par['num_exc']//2], 0.25, 1, dtype=tf.float32)
-                w_out_inh1 = tf.zeros([p.par['n_output'],p.par['num_inh']//2],dtype=tf.float32)
-                w_out = tf.concat([w_out_exc0, w_out_inh0,w_out_exc1, w_out_inh1],axis=1)
-
-                tf.get_variable('W_rnn', initializer=w_rnn, trainable=True)
-                tf.get_variable('W_out', initializer=w_out, trainable=True)
-                tf.get_variable('b_rnn', shape=[p.par['n_hidden'], 1], initializer=tf.random_uniform_initializer(-1e-6,1e-6), trainable=True)
-                tf.get_variable('b_out', shape=[p.par['n_output'], 1], initializer=tf.random_uniform_initializer(-1e-6,1e-6), trainable=True)
-
-                if p.par['num_rules'] > 1:
-                    w_rule0 = tf.zeros([p.par['n_hidden']//2,p.par['num_rule_tuned']], dtype=tf.float32)
-                    w_rule1 = tf.random_uniform([p.par['n_hidden']//2,p.par['num_rule_tuned']], -0.1, 0.1, dtype=tf.float32)
-                    w_rule = tf.concat([w_rule0, w_rule1],axis=0)
-
-                    tf.get_variable('W_rule', initializer=w_rule, trainable=True)
-                else:
-                    w_rule = tf.zeros([p.par['n_hidden'],p.par['num_rule_tuned']], dtype=tf.float32)
-                    tf.get_variable('W_rule', initializer=w_rule, trainable=False)
-
+        for n in range(len(p.par['generator_dims']) - 1):
+            with tf.variable_scope('generator'+str(n)):
+                w = tf.random_uniform([p.par['generator_dims'][n+1],p.par['generator_dims'][n]], \
+                    -0.1, 0.1, dtype=tf.float32)
+                tf.get_variable('W', initializer=w, trainable=True)
+                b = tf.random_uniform([p.par['generator_dims'][n+1],1], -0.1, 0.1, dtype=tf.float32)
+                #b = tf.zeros([p.par['generator_dims'][n+1], 1], dtype=tf.float32)
+                tf.get_variable('b', initializer=b, trainable=True)
+        with tf.variable_scope('generator_output'):
+            w = tf.random_uniform([p.par['wrnn_generator_dims'][1],p.par['wrnn_generator_dims'][0]], \
+                -0.01, 0.01, dtype=tf.float32)
+            tf.get_variable('W_rnn', initializer=w, trainable=True)
+            w = tf.random_uniform([p.par['wout_generator_dims'][1],p.par['wout_generator_dims'][0]], \
+                -0.01, 0.01, dtype=tf.float32)
+            tf.get_variable('W_out', initializer=w, trainable=True)
+            w = tf.random_uniform([p.par['brnn_generator_dims'][1],p.par['brnn_generator_dims'][0]], \
+                -0.01, 0.01, dtype=tf.float32)
+            tf.get_variable('b_rnn', initializer=w, trainable=True)
+            w = tf.random_uniform([p.par['bout_generator_dims'][1],p.par['bout_generator_dims'][0]], \
+                -0.01, 0.01, dtype=tf.float32)
+            tf.get_variable('b_out', initializer=w, trainable=True)
 
 
 
@@ -93,15 +83,42 @@ class Model:
         self.networks_syn_u = []
 
         for n in range(p.par['num_networks']):
-            with tf.variable_scope('network'+str(n), reuse=True):
-                W_rnn = tf.get_variable('W_rnn')
-                W_out = tf.get_variable('W_out')
-                b_rnn = tf.get_variable('b_rnn')
-                b_out = tf.get_variable('b_out')
-                W_rule = tf.get_variable('W_rule')
+            z = tf.reshape(self.generator_var[n],(p.par['generator_dims'][0], 1))
+            for m in range(len(p.par['generator_dims']) - 1):
+                with tf.variable_scope('generator'+str(m), reuse=True):
+
+                    W = tf.nn.relu(tf.get_variable('W'))
+                    b = tf.nn.tanh(tf.get_variable('b'))
+                    z = tf.nn.relu(tf.matmul(W, z) + b)
+                    if m == 0:
+                        self.z0 = z
+                    if m == 1:
+                        self.z1 = z
+
+                    z = tf.nn.dropout(z, 0.9999)
+
+            with tf.variable_scope('generator_output', reuse=True):
+                W_rnn_gen = tf.get_variable('W_rnn')
+                W_out_gen = tf.get_variable('W_out')
+                b_rnn_gen = tf.get_variable('b_rnn')
+                b_out_gen = tf.get_variable('b_out')
+
+                W_rnn = tf.matmul(tf.nn.relu(W_rnn_gen), z)
+                W_out = tf.matmul(W_out_gen, z)
+                b_rnn = tf.matmul(b_rnn_gen, z)
+                b_out = tf.matmul(b_out_gen, z)
+
+                W_rnn = tf.reshape(W_rnn,(p.par['n_hidden'], p.par['n_hidden']))
+                W_out = tf.reshape(W_out,(p.par['n_output'], p.par['n_hidden']))
+                b_rnn = tf.reshape(b_rnn,(p.par['n_hidden'], 1))
+                b_out = tf.reshape(b_out,(p.par['n_output'], 1))
+                #b_out = tf.constant(np.zeros((3,1)), dtype = tf.float32)
 
             if p.par['EI']:
+                W_rnn *= self.w_rnn_mask
                 W_rnn = tf.matmul(tf.nn.relu(W_rnn), self.W_ei)
+
+            W_out *= self.w_out_mask
 
             hidden_state_hist = []
             syn_x_hist = []
@@ -112,7 +129,7 @@ class Model:
             syn_x = self.synapse_x_init
             syn_u = self.synapse_u_init
 
-            for t, (x, r) in enumerate(zip(self.motion_data, self.rule_data)):
+            for t, x in enumerate(self.input_data):
 
                 # Calculate effect of STP
                 if p.par['synapse_config'] == 'std_stf':
@@ -143,13 +160,12 @@ class Model:
                     h_post = h
 
                 # Calculate new and recurrent rnn inputs
-                motion_input = tf.matmul(tf.nn.relu(self.W_in), tf.nn.relu(x))
-                rule_input = tf.matmul(W_rule, tf.nn.relu(r))
+                rnn_input = tf.matmul(tf.nn.relu(self.W_in), tf.nn.relu(x))
                 rnn_recur = tf.matmul(W_rnn, h_post)
 
                 # Compute rnn state
                 h = tf.nn.relu(h*(1-p.par['alpha_neuron']) \
-                    + p.par['alpha_neuron']*(motion_input + rule_input + rnn_recur + b_rnn) \
+                    + p.par['alpha_neuron']*(rnn_input + rnn_recur + b_rnn) \
                     + tf.random_normal([p.par['n_hidden'],p.par['batch_train_size']], 0, p.par['noise_rnn'], dtype=tf.float32))
 
                 # Compute output state
@@ -175,7 +191,10 @@ class Model:
         self.total_loss = tf.constant(0.)
 
         self.variables = [var for var in tf.trainable_variables() if not var.op.name.find('conv')==0]
+        print(self.variables)
         adam_optimizer = AdamOpt.AdamOpt(self.variables, learning_rate = p.par['learning_rate'])
+
+        #adam_optimizer = tf.train.AdamOptimizer(learning_rate = p.par['learning_rate'])
 
         for n in range(p.par['num_networks']):
 
@@ -189,8 +208,9 @@ class Model:
             spike_loss = tf.reduce_mean(tf.stack(spike_loss, axis=0))
 
             # Calculate wiring cost
-            wiring_loss = [p.par['wiring_cost']*tf.nn.relu(W_rnn*p.par['W_rnn_dist']) for W_rnn in tf.trainable_variables() if 'W_rnn' in W_rnn.name]
-            wiring_loss = tf.reduce_mean(tf.stack(wiring_loss, axis=0))
+            #wiring_loss = [p.par['wiring_cost']*tf.nn.relu(W_rnn*p.par['W_rnn_dist']) for W_rnn in tf.trainable_variables() if 'W_rnn' in W_rnn.name]
+            #wiring_loss = tf.reduce_mean(tf.stack(wiring_loss, axis=0))
+            wiring_loss = 0.
 
             # Add losses to record
             self.perf_losses.append(perf_loss)
@@ -202,6 +222,8 @@ class Model:
 
 
         self.train_op = adam_optimizer.compute_gradients(self.total_loss)
+        self.grads = adam_optimizer.return_delta_grads()
+        #self.train_op = adam_optimizer.minimize(self.total_loss)
         self.reset_adam_op = adam_optimizer.reset_params()
 
 
@@ -226,18 +248,17 @@ def main(gpu_id = None):
     stim = stimulus.Stimulus()
 
     mask = tf.placeholder(tf.float32, shape=[p.par['num_time_steps'], p.par['batch_train_size']])
-    motion_in = tf.placeholder(tf.float32, shape=[p.par['num_motion_tuned'], p.par['num_time_steps'], p.par['batch_train_size']])
-    rule_in = tf.placeholder(tf.float32, shape=[p.par['num_rule_tuned'], p.par['num_time_steps'], p.par['batch_train_size']])
+    x = tf.placeholder(tf.float32, shape=[p.par['n_input'], p.par['num_time_steps'], p.par['batch_train_size']])
     y = tf.placeholder(tf.float32, shape=[p.par['n_output'], p.par['num_time_steps'], p.par['batch_train_size']])
-
+    z = tf.placeholder(tf.float32, shape=[p.par['num_networks'], p.par['generator_dims'][0]])
 
     """ Start TensorFlow session """
-    with tf.Session(config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)) as sess:
+    with tf.Session() as sess:
         if gpu_id is None:
-            model = Model(motion_in, rule_in, y, mask)
+            model = Model(x, y, mask, z)
         else:
             with tf.device("/gpu:0"):
-                model = Model(motion_in, rule_in, y, mask)
+                model = Model(x, y, mask, z)
 
         # Initialize session variables
         init = tf.global_variables_initializer()
@@ -250,27 +271,49 @@ def main(gpu_id = None):
             saver.restore(sess, p.par['save_dir'] + p.par['ckpt_load_fn'])
             print('Model ' +  p.par['ckpt_load_fn'] + ' restored.')
 
-        results = create_results_dict()
+        generator_var = np.random.normal(0,1,size=(p.par['num_networks'], p.par['generator_dims'][0]))
 
         for k in range(p.par['num_network_iters']):
             print('NETWORK ITERATION ', k)
+
             for i in range(p.par['num_iterations']):
 
                 # generate batch of batch_train_size
                 trial_info = stim.generate_trial()
-                motion_input = trial_info['neural_input'][:p.par['num_motion_tuned'], :, :]
-                rule_input = trial_info['neural_input'][p.par['num_motion_tuned']:, :, :]
+
+                # each iteration, regenerate a new generator_var with a fixed prob
+                ind_regen = np.where(np.random.rand(p.par['num_networks']) < p.par['regenerate_var_prob'])[0]
+                if len(ind_regen) > 0:
+                    new_gen_vars = np.random.normal(0,1,size=(len(ind_regen), p.par['generator_dims'][0]))
+                    generator_var[ind_regen, :] = new_gen_vars
+                    print('Regenerating ', len(ind_regen), ' vectors')
 
                 # get the intiial weights
-                if i == 0:
-                    W_rnn0, W_out0, W_rule0 = get_initial_weights()
+                if i == -1:
+                    W_rnn0, W_out0 = get_initial_weights()
 
                 """
                 Run the model
                 """
-                _, total_loss, perf_loss, spike_loss, wiring_loss, network_output = sess.run([model.train_op, model.total_loss, model.perf_losses, \
-                    model.spike_losses, model.wiring_losses, model.networks_output], {motion_in:motion_input, \
-                    rule_in: rule_input, y: trial_info['desired_output'], mask: trial_info['train_mask']})
+                _, total_loss, perf_loss, spike_loss, network_output, grads, z0, z1 = sess.run([model.train_op, model.total_loss, model.perf_losses, \
+                    model.spike_losses, model.networks_output, model.grads, model.z0, model.z1], {x: trial_info['neural_input'], \
+                    y: trial_info['desired_output'], mask: trial_info['train_mask'], z: generator_var})
+
+                """
+                print(type(grads))
+                for v,g in grads.items():
+                    print('v',v)
+                    print('g',np.sum(g))
+                    if v == 'generator_output/W_rnn':
+                        plt.imshow(g, aspect='auto', interpolation = 'none')
+                        plt.colorbar()
+                        plt.show()
+                        print(z0.shape, z1.shape)
+                        #plt.imshow(z, aspect='auto', interpolation = 'none')
+                        plt.plot(z0[:,0],'b')
+                        plt.plot(z1[:,0],'r')
+                        plt.show()
+                """
 
                 if (i+1)%p.par['iters_between_outputs'] == 0:# and i != 0:
                     accuracy = np.array([get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output])
@@ -283,92 +326,62 @@ def main(gpu_id = None):
                     #wirestr = 'Wiring Loss: {:>7.4} +/- {:<7.4}'.format(np.mean(wiring_loss), np.std(wiring_loss))
                     perfstr = 'Perf. Loss: {:>7.4}'.format(np.mean(perf_loss))
                     spikstr = 'Spike Loss: {:>7.4}'.format(np.mean(spike_loss))
-                    wirestr = 'Wiring Loss: {:>7.4}'.format(np.mean(wiring_loss))
+                    #wirestr = 'Wiring Loss: {:>7.4}'.format(np.mean(wiring_loss))
                     accuracystr = 'Accuracy: {:>7.4} +/- {:<7.4}'.format(np.mean(accuracy), np.std(accuracy))
 
-                    print(' | '.join([str(x) for x in [iterstr, timestr, perfstr, spikstr, wirestr, accuracystr]]))
+                    print(' | '.join([str(x) for x in [iterstr, timestr, perfstr, spikstr, accuracystr]]))
 
-            print('Saving data and reseting variables...')
-            save_data(results, k, network_output, trial_info, W_rnn0, W_out0, W_rule0)
-            sess.run(model.reset_adam_op)
-            init = tf.global_variables_initializer()
-            sess.run(init)
+                if (i+1)%500 == 0:
+
+                    accuracy = np.array([get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output])
+                    novel_generator_var = np.random.normal(0,1,size=(p.par['num_networks'], p.par['generator_dims'][0]))
+                    trial_info = stim.generate_trial()
+                    network_output = sess.run(model.networks_output, {x: trial_info['neural_input'], \
+                        y: trial_info['desired_output'], mask: trial_info['train_mask'], z: novel_generator_var})
+                    novel_accuracy = np.array([get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output])
+                    accuracystr = 'Accuracy: {:>7.4} +/- {:<7.4}'.format(np.mean(novel_accuracy), np.std(novel_accuracy))
+                    print('Novel ', accuracystr)
+                    print('Saving data...')
+                    save_data(accuracy, novel_accuracy)
 
 
 
-def get_initial_weights():
 
-    W_rnn0 = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32)
-    W_out0 = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32)
-    W_rule0 = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['num_rule_tuned']), dtype = np.float32)
-    for n in range(p.par['num_networks']):
-        with tf.variable_scope('network'+str(n), reuse=True):
-            w = tf.get_variable('W_rnn')
-            w = w.eval()
-            W_rnn0[n,:] = np.reshape(w,(p.par['n_hidden']*p.par['n_hidden']))
-            w = tf.get_variable('W_out')
-            w = w.eval()
-            W_out0[n,:] = np.reshape(w,(p.par['n_hidden']*p.par['n_output']))
-            w = tf.get_variable('W_rule')
-            w = w.eval()
-            W_rule0[n,:] = np.reshape(w,(p.par['n_hidden']*p.par['num_rule_tuned']))
 
-    return W_rnn0, W_out0, W_rule0
 
-def save_data(results, k, network_output, trial_info, W_rnn0, W_out0, W_rule0):
+def save_data(train_accuracy, novel_accuracy):
 
     # save data
-    ind = range(k*p.par['num_networks'], (k+1)*p.par['num_networks'])
-    accuracy = [get_perf(trial_info['desired_output'], y_hat, trial_info['train_mask']) for y_hat in network_output]
-    W_rnn, W_out, W_rule, b_rnn, b_out = eval_weights()
-    results['W_rnn'][ind, :] = W_rnn
-    results['W_out'][ind, :] = W_out
-    results['W_rnn0'][ind, :] = W_rnn0
-    results['W_out0'][ind, :] = W_out0
-    results['W_rule0'][ind, :] = W_rule0
-    results['b_rnn'][ind, :] = b_rnn
-    results['b_out'][ind, :] = b_out
-    results['accuracy'][ind] = np.array(accuracy)
+    results = {}
+    results['weight_dict'] = eval_weights()
+    results['train_accuracy'] = train_accuracy
+    results['novel_accuracy'] = novel_accuracy
+    results['par'] = p.par
     pickle.dump(results, open(p.par['save_dir'] + p.par['save_fn'], 'wb') )
 
 
-def create_results_dict():
-
-    results = {
-        'W_rnn'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32),
-        'W_out'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32),
-        'W_rule'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['num_rule_tuned']), dtype = np.float32),
-        'W_rnn0'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32),
-        'W_out0'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32),
-        'W_rule0'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']*p.par['num_rule_tuned']), dtype = np.float32),
-        'b_rnn'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_hidden']), dtype = np.float32),
-        'b_out'     : np.zeros((p.par['num_networks']*p.par['num_network_iters'], p.par['n_output']), dtype = np.float32),
-        'accuracy'  : np.zeros((p.par['num_networks']*p.par['num_network_iters']), dtype = np.float32)}
-
-    return results
 
 def eval_weights():
 
-    W_rnn = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_hidden']), dtype = np.float32)
-    W_out = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['n_output']), dtype = np.float32)
-    W_rule = np.zeros((p.par['num_networks'], p.par['n_hidden']*p.par['num_rule_tuned']), dtype = np.float32)
-    b_rnn = np.zeros((p.par['num_networks'], p.par['n_hidden']), dtype = np.float32)
-    b_out = np.zeros((p.par['num_networks'], p.par['n_output']), dtype = np.float32)
+    weight_dict = {}
 
-    for n in range(p.par['num_networks']):
-        with tf.variable_scope('network'+str(n), reuse=True):
-            x = tf.get_variable('W_rnn')
-            W_rnn[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']*p.par['n_hidden']))
-            x = tf.get_variable('W_out')
-            W_out[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']*p.par['n_output']))
-            x = tf.get_variable('W_rule')
-            W_rule[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']*p.par['num_rule_tuned']))
-            x = tf.get_variable('b_rnn')
-            b_rnn[n, :] = np.reshape(x.eval(), (1, p.par['n_hidden']))
-            x = tf.get_variable('b_out')
-            b_out[n, :] = np.reshape(x.eval(), (1, p.par['n_output']))
+    for n in range(len(p.par['generator_dims']) - 1):
+        with tf.variable_scope('generator'+str(n), reuse=True):
+            W = tf.get_variable('W')
+            weight_dict['W'+str(n)] = W.eval()
+            b = tf.get_variable('b')
+            weight_dict['b'+str(n)] = b.eval()
+    with tf.variable_scope('generator_output', reuse=True):
+        W = tf.get_variable('W_rnn')
+        weight_dict['W_rnn'] = W.eval()
+        W = tf.get_variable('W_out')
+        weight_dict['W_out'] = W.eval()
+        W = tf.get_variable('b_rnn')
+        weight_dict['b_rnn'] = W.eval()
+        W = tf.get_variable('b_out')
+        weight_dict['b_out'] = W.eval()
 
-    return W_rnn, W_out, W_rule, b_rnn, b_out
+    return weight_dict
 
 def get_perf(y, y_hat, mask):
 
@@ -391,7 +404,8 @@ def get_perf(y, y_hat, mask):
     #accuracy_match = np.sum(np.float32(y == y_hat)*np.squeeze(mask_match))/np.sum(mask_match)
 
     return accuracy
-"""
+
+
 if __name__ == '__main__':
     try:
         # GPU designated by first argument (must be integer 0-3)
@@ -405,4 +419,3 @@ if __name__ == '__main__':
         main(sys.argv[1])
     except KeyboardInterrupt:
         quit('Quit by KeyboardInterrupt')
-"""

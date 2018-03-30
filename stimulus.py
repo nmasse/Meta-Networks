@@ -12,8 +12,12 @@ class Stimulus:
 
 
     def generate_trial(self):
-
-
+        """
+        if trial_type ==0:
+            par['trial_type'] = 'DMS'
+        elif trial_type ==1:
+            par['trial_type'] = 'DMC'
+        """
         if par['trial_type'] in ['DMS','DMRS45','DMRS90','DMRS90ccw','DMRS180','DMC','DMS+DMRS','DMS+DMRS_early_cue', 'DMS+DMC','DMS+DMRS+DMC']:
             trial_info = self.generate_motion_working_memory_trial()
         elif par['trial_type'] in ['ABBA','ABCA']:
@@ -348,6 +352,7 @@ class Stimulus:
             """
             trial_info['desired_output'][0, eodead:eod_current, t] = 1
             if not catch:
+                trial_info['train_mask'][eod_current:, t] = 4 # give greater weight to test period
                 if match == 0:
                     trial_info['desired_output'][1, eod_current:, t] = 1
                 else:

@@ -24,13 +24,15 @@ class Model:
 
     def run_model(self):
 
+        C = 0.01
+
         x = self.input_data
         for n in range(len(par['encoder_dims'])-1):
             with tf.variable_scope('encoder' + str(n)):
 
                 # Get layer variables
                 W = tf.get_variable('W', (par['encoder_dims'][n+1], par['encoder_dims'][n]), \
-                    initializer=tf.random_uniform_initializer(-0.05, 0.05))
+                    initializer=tf.random_uniform_initializer(-C, C))
                 b = tf.get_variable('b', (par['encoder_dims'][n+1], 1), initializer=tf.constant_initializer(0))
                 x = tf.nn.relu(tf.matmul(W, x) + b)
 
@@ -38,10 +40,10 @@ class Model:
         with tf.variable_scope('latent'):
             print(par['encoder_dims'])
             W_mu = tf.get_variable('W_mu', (par['n_latent'], par['encoder_dims'][-1]), \
-                initializer=tf.random_uniform_initializer(-0.05, 0.05))
+                initializer=tf.random_uniform_initializer(-C, C))
             b_mu = tf.get_variable('b_mu', (par['n_latent'], 1), initializer=tf.constant_initializer(0))
             W_sigma = tf.get_variable('W_sigma', (par['n_latent'], par['encoder_dims'][-1]), \
-                initializer=tf.random_uniform_initializer(-0.05, 0.05))
+                initializer=tf.random_uniform_initializer(-C, C))
             b_sigma = tf.get_variable('b_sigma', (par['n_latent'], 1), initializer=tf.constant_initializer(0))
 
 
@@ -70,7 +72,10 @@ class Model:
                 W = tf.get_variable('W', (par['accuracy_dims'][n+1], par['accuracy_dims'][n]), \
                     initializer=tf.random_uniform_initializer(-0.05, 0.05))
                 b = tf.get_variable('b', (par['accuracy_dims'][n+1], 1), initializer=tf.constant_initializer(0))
-                self.pred_acc = tf.nn.relu(tf.matmul(W, self.pred_acc) + b)
+                if n<len(par['accuracy_dims'])-2:
+                    self.pred_acc = tf.nn.relu(tf.matmul(W, self.pred_acc) + b)
+                else:
+                    self.pred_acc = tf.matmul(W, self.pred_acc) + b
 
 
 
@@ -140,7 +145,7 @@ def main(gpu_id = None):
             model_performance['accuracy_loss'].append(accuracy_loss)
             model_performance['loss'].append(loss)
 
-            if (i)%500==0:
+            if (i)%2500==0:
                 iteration_time = time.time() - t_start
                 iterstr = 'Iter. {:>4}'.format(i)
                 timestr = 'Time. {:>7.4}'.format(iteration_time)
@@ -150,11 +155,11 @@ def main(gpu_id = None):
                 accstr = 'Accuracy Loss: {:>7.4}'.format(np.mean(accuracy_loss))
                 print(' | '.join([str(x) for x in [iterstr, timestr, lossstr, reconstr, latentstr, accstr]]))
 
-        W_deocder, b_decoder, W_accuracy, b_accuracy = eval_weights()
-        z = output_prototypes(W_deocder, b_decoder)
-        results = {'W_deocder': W_deocder, 'b_decoder': b_decoder, 'W_accuracy': W_accuracy, 'b_accuracy': b_accuracy, \
-            'z': z, 'model_performance': model_performance, 'latent_mu': latent_mu}
-        pickle.dump(results, open(par['save_dir'] + 'autoencoder_results.pkl', 'wb') )
+                W_deocder, b_decoder, W_accuracy, b_accuracy = eval_weights()
+                z = output_prototypes(W_deocder, b_decoder)
+                results = {'W_deocder': W_deocder, 'b_decoder': b_decoder, 'W_accuracy': W_accuracy, 'b_accuracy': b_accuracy, \
+                    'z': z, 'model_performance': model_performance, 'latent_mu': latent_mu, 'n_latent': par['n_latent']}
+                pickle.dump(results, open(par['save_dir'] + 'autoencoder_results_11.pkl', 'wb') )
         for j in range(len(z)):
             plt.imshow(z[j], aspect = 'auto', interpolation = 'none')
             plt.colorbar()
@@ -184,7 +189,9 @@ def load_network_weights(data_dir, file_prefix, accuracy_threshold):
                     accuracy.append(x['accuracy'][n])
                     w0 = np.maximum(0,x['W_rnn'][n, :])
                     w1 = np.maximum(0,x['W_out'][n, :])
-                    weights.append(np.hstack((w0, w1)))
+                    b0 = np.maximum(0,x['b_rnn'][n, :])
+                    b1 = np.maximum(0,x['b_out'][n, :])
+                    weights.append(np.hstack((w0, w1, b0, b1)))
     weights = np.transpose(np.stack(weights, axis=0))
 
     return weights, accuracy
