@@ -281,7 +281,7 @@ def calc_svm(lin_clf, y, train_conds, test_conds, train_ind, test_ind):
     return score
 
 
-def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time, gate):
+def lesion_weights(trial_info, hidden_init, syn_x_init, syn_u_init, network_weights, gate):
 
     lesion_results = {'lesion_accuracy_rnn': np.ones((par['num_rules'], par['n_hidden'],par['n_hidden']), dtype=np.float32),
                       'lesion_accuracy_out': np.ones((par['num_rules'], 3,par['n_hidden']), dtype=np.float32)}
@@ -289,28 +289,16 @@ def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time, gat
     for r in range(par['num_rules']):
         trial_ind = np.where(trial_info['rule']==r)[0]
         # network inputs/outputs
-        test_onset = (par['dead_time']+par['fix_time'])//par['dt']
-        x = np.split(trial_info['neural_input'][:,test_onset:,trial_ind],len(trial_time)-test_onset,axis=1)
-        y = np.array(trial_info['desired_output'][:,test_onset:,trial_ind])
-        train_mask = np.array(trial_info['train_mask'][test_onset:,trial_ind])
-        hidden_init = h[:,test_onset-1,trial_ind]
-        syn_x_init = syn_x[:,test_onset-1,trial_ind]
-        syn_u_init = syn_u[:,test_onset-1,trial_ind]
-
-        test_onset = (par['dead_time']+par['fix_time']+par['sample_time']+par['delay_time'])//par['dt']
-
-        hidden_init_test = h[:,test_onset-1,trial_ind]
-        syn_x_init_test = syn_x[:,test_onset-1,trial_ind]
-        syn_u_init_test = syn_u[:,test_onset-1,trial_ind]
-        x_test = np.split(trial_info['neural_input'][:,test_onset:,trial_ind],len(trial_time)-test_onset,axis=1)
-        y_test = trial_info['desired_output'][:,test_onset:,trial_ind]
-        train_mask_test = trial_info['train_mask'][test_onset:,trial_ind]
+        trial_time = trial_info['neural_input'].shape[1]
+        #x = np.split(trial_info['neural_input'][:,:,trial_ind],trial_time,axis=1)
+        y = np.array(trial_info['desired_output'][:,:,trial_ind])
+        train_mask = np.array(trial_info['train_mask'][:,trial_ind])
 
         print('Lesioning output weights...')
         for n1 in range(3):
             for n2 in range(par['n_hidden']):
 
-                if network_weights['w_out'][n1,n2] <= 0:
+                if network_weights['w_out'][n1,n2] <= 0 or gate[n2] == 0:
                     continue
 
                 # create new dict of weights
@@ -324,15 +312,17 @@ def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time, gat
                 weights_new['w_out'] *= q
 
                 # simulate network
-                y_hat, _, _, _ = run_model(x_test, hidden_init_test, syn_x_init_test, syn_u_init_test, weights_new)
-                lesion_results['lesion_accuracy_out'][r,n1,n2],_,_ = get_perf(y_test, y_hat, train_mask_test)
+                y_hat, _, _, _ = run_model(trial_info['neural_input'], hidden_init, syn_x_init, syn_u_init, weights_new, gate)
+                lesion_results['lesion_accuracy_out'][r,n1,n2],_,_ = get_perf(y, y_hat, train_mask)
 
         print('Lesioning recurrent weights...')
         for n1 in range(par['n_hidden']):
             for n2 in range(par['n_hidden']):
 
-                if network_weights['w_rnn'][n1,n2] <= 0:
+                if network_weights['w_rnn'][n1,n2] <= 0 or gate[n1]==0 or gate[n2]==0:
                     continue
+
+                #print(n1,n2)
 
                 weights_new = {}
                 for k,v in network_weights.items():
@@ -344,7 +334,7 @@ def lesion_weights(trial_info, h, syn_x, syn_u, network_weights, trial_time, gat
                 weights_new['w_rnn'] *= q
 
                 # simulate network
-                y_hat, hidden_state_hist, _, _ = run_model(x, hidden_init, syn_x_init, syn_u_init, weights_new, gate)
+                y_hat, hidden_state_hist, _, _ = run_model(trial_info['neural_input'], hidden_init, syn_x_init, syn_u_init, weights_new, gate)
                 lesion_results['lesion_accuracy_rnn'][r,n1,n2],_,_ = get_perf(y, y_hat, train_mask)
 
                 #y_hat, _, _, _ = run_model(x_test, hidden_init_test, syn_x_init_test, syn_u_init_test, weights_new)

@@ -4,6 +4,9 @@ from itertools import permutations
 import matplotlib.pyplot as plt
 import pickle
 import os
+import stimulus
+import parameters
+import analysis
 
 
 class Motifs:
@@ -11,36 +14,109 @@ class Motifs:
     def __init__(self, data_dir, file_prefix):
 
         self.motifs = {}
-        self.motif_sizes = [2,3,4,5,6]
+        self.motif_sizes = [2,3]
         data_files = os.listdir(data_dir)
 
         for f in data_files:
             if f.startswith(file_prefix):
                 print('Processing ', f)
                 self.current_filename = f
-                self.W, self.v = self.make_matrix(data_dir + f)
-                self.find_motifs()
+                W, v = self.make_matrix(data_dir + f, 'elim_lesion')
+                print(type(W))
+                if type(W) is list:
+                    for i,w1 in enumerate(W):
+                        self.find_motifs(w1, v)
+                else:
+                    self.find_motifs(W, v)
 
         self.print_motif_list()
 
 
     def make_matrix(self, filename, method):
         x = pickle.load(open(filename, 'rb'))
-        beh_threshold = 0.1
-        val_th = 0.25
-        N = 36
+        beh_threshold = 0.01
+        val_th = 0.1
+        ind_accurate = np.where(np.array(x['accuracy_hist']) > 0.95)[0]
+        N = np.argmax(ind_accurate)
+        #N = 1
+        print('N = ', N)
+
+        if method == 'elim_lesion' or  method == 'elim':
+            parameters.update_parameters(x['par'])
+            s = stimulus.Stimulus()
+            trial_info = s.generate_trial()
+
 
         if method == 'lesion':
             significant_weights_rnn = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_rnn'][0,:,:] > beh_threshold
             significant_weights_out = x['model_performance']['accuracy'][-1] - x['lesion_accuracy_out'][0,:,:] > beh_threshold
-        elif method == 'value':
-            significant_weights_rnn = x['weights_hist'][N]['w_rnn'] > val_th
-            significant_weights_rnn = x['weights_hist'][N]['w_out'] > val_th
-        W = np.vstack((significant_weights_rnn, significant_weights_out))
-        d = W.shape[0] - W.shape[1]
-        W = np.hstack((W, np.zeros((W.shape[0], d))))
-        v = np.array([0]*x['parameters']['num_exc_units'] + [1]*x['parameters']['num_inh_units'] \
-            + [2]*x['parameters']['n_output'])
+            v = np.array([0]*x['parameters']['num_exc_units'] + [1]*x['parameters']['num_inh_units'] \
+                + [2]*x['parameters']['n_output'])
+            W = np.vstack((significant_weights_rnn, significant_weights_out))
+            d = W.shape[0] - W.shape[1]
+            W = np.hstack((W, np.zeros((W.shape[0], d))))
+
+        elif method == 'elim':
+            num_units = 50 - N
+            w1 = np.zeros((num_units, num_units))
+            w2 = np.zeros((3, num_units))
+            ind = np.where(x['gate_hist'][N]>0)[0]
+            for i in range(num_units):
+                for j in range(num_units):
+                    w1[i,j] = x['weights_hist'][N]['w_rnn'][ind[i], ind[j]] > val_th
+                for j in range(3):
+                    w2[j,i] = x['weights_hist'][N]['w_out'][j, ind[i]] > val_th
+            n_exc = int(np.sum(x['gate_hist'][N][:x['par']['num_exc']]))
+            n_inh = int(np.sum(x['gate_hist'][N][x['par']['num_exc']:]))
+            v = np.array([0]*n_exc + [1]*n_inh + [2]*x['par']['n_output'])
+            W = np.vstack((w1, w2))
+            d = W.shape[0] - W.shape[1]
+            W = np.hstack((W, np.zeros((W.shape[0], d))))
+
+
+
+        elif method == 'elim_lesion':
+            num_units = 50 - N
+            r = analysis.lesion_weights(trial_info, x['par']['h_init'], x['par']['syn_x_init'], x['par']['syn_u_init'], \
+                x['weights_hist'][N], x['gate_hist'][N])
+            #plt.imshow(np.squeeze(r['lesion_accuracy_rnn']), aspect='auto', interpolation = 'none')
+            #plt.colorbar()
+            #plt.show()
+            w1_full = np.tile(x['accuracy_hist'][N],(x['par']['n_hidden'],x['par']['n_hidden'])) - np.squeeze(r['lesion_accuracy_rnn']) > beh_threshold
+            w2_full = np.tile(x['accuracy_hist'][N],(x['par']['n_output'],x['par']['n_hidden'])) - np.squeeze(r['lesion_accuracy_out']) > beh_threshold
+            w1 = np.zeros((num_units, num_units))
+            w2 = np.zeros((3, num_units))
+            ind = np.where(x['gate_hist'][N]>0)[0]
+            for i in range(num_units):
+                for j in range(num_units):
+                    w1[i,j] = w1_full[ind[i], ind[j]]
+                for j in range(3):
+                    w2[j,i] = w2_full[j, ind[i]]
+            #plt.imshow(w1, aspect='auto', interpolation = 'none')
+            #plt.colorbar()
+            #plt.show()
+            print('accuracy ', x['accuracy_hist'][N])
+            n_exc = int(np.sum(x['gate_hist'][N][:x['par']['num_exc']]))
+            n_inh = int(np.sum(x['gate_hist'][N][x['par']['num_exc']:]))
+            v = np.array([0]*n_exc + [1]*n_inh + [2]*x['par']['n_output'])
+            W = np.vstack((w1, w2))
+            d = W.shape[0] - W.shape[1]
+            W = np.hstack((W, np.zeros((W.shape[0], d))))
+            #plt.imshow(W, aspect='auto', interpolation = 'none')
+            #plt.colorbar()
+            #plt.show()
+            #print(v)
+
+        elif method == 'stacked':
+            W = []
+            for i in range(x['W_rnn'].shape[0]):
+                w1 = np.reshape(x['W_rnn'][i,:], (50,50))>0.2
+                w2 = np.reshape(x['W_out'][i,:], (3,50))>0.2
+                v = np.array([0]*40 + [1]*10 + [2]*3)
+                W1 = np.vstack((w1, w2))
+                d = W1.shape[0] - W1.shape[1]
+                W1 = np.hstack((W1, np.zeros((W1.shape[0], d))))
+                W.append(W1)
 
         return W, v
 
@@ -65,9 +141,9 @@ class Motifs:
             self.p_connection[n1, n2] = connection[n1, n2]/total[n1,n2] if total[n1,n2] != 0 else -1
 
 
-    def find_motifs(self):
+    def find_motifs(self, W ,v):
 
-        W, v = self.prune_network()
+        W, v = self.prune_network(W, v)
         for i in self.motif_sizes:
             self.find_motif_set_size(W, v, i)
 
@@ -124,11 +200,13 @@ class Motifs:
         s = [str(int(i)) for i in v1]
         id0 = ''.join(s)
 
-        s = [str(int(i)) for i in np.reshape(np.where(W1 > 0, 1, 0), (len(v1)**2))]
+        s = [str(int(i)) for i in np.reshape(np.where(W1 > 0, 1, 0), (len(v1)**2), order='F')]
         id1 = ''.join(s)
 
         s = [str(int(i)) for i in np.sort(u)]
         location = [''.join(s)]
+
+        #print(id0, id1, W1)
 
         if id0 not in self.motifs.keys():
             self.motifs[id0] = {id1: {}}
@@ -142,7 +220,7 @@ class Motifs:
                 for key, val in self.motifs[id0].items():
                     if self.is_isomorphic(W1, v1, val['W'], val['v']):
                         for k, v in self.motifs[id0][key]['location'].items():
-                            if self.current_filename == k and location == v:
+                            if self.current_filename == k and location in v:
                                 return
                         self.motifs[id0][key]['count'] += 1
                         if self.current_filename in self.motifs[id0][key]['location'].keys():
@@ -158,7 +236,7 @@ class Motifs:
                 self.motifs[id0][id1]['location'] = {self.current_filename : [location]}
             else:
                 for k, v in self.motifs[id0][id1]['location'].items():
-                    if self.current_filename == k and location == v:
+                    if self.current_filename == k and location in v:
                         return
                 self.motifs[id0][id1]['count'] += 1
                 if self.current_filename in self.motifs[id0][id1]['location'].keys():
@@ -166,7 +244,7 @@ class Motifs:
                 else:
                     self.motifs[id0][id1]['location'][self.current_filename] = location
 
-    def is_isomorphic(self,W1, v1, W2, v2):
+    def is_isomorphic(self, W1, v1, W2, v2):
 
         N = len(v1)
         if not np.sum(W1) == np.sum(W2):
@@ -189,16 +267,16 @@ class Motifs:
         return False
 
 
-    def prune_network(self):
+    def prune_network(self,W,v):
 
-        inputs = np.sum(self.W, axis = 0)
-        outputs = np.sum(self.W, axis = 1)
+        inputs = np.sum(W, axis = 0)
+        outputs = np.sum(W, axis = 1)
         connections = inputs + outputs
         neurons_with_connections = np.where(connections > 0)[0]
-        W = self.W[:, neurons_with_connections]
+        W = W[:, neurons_with_connections]
         W = W[neurons_with_connections, :]
-        v = self.v[neurons_with_connections]
-
+        v = v[neurons_with_connections]
+        print('neurons_with_connections', len(neurons_with_connections))
         return W, v
 
 
@@ -214,4 +292,3 @@ class Motifs:
             print('Long ID:\t(Rounded weights: if w > 0, is 1)')
             for lid in sorted(l, key=lambda k : -self.motifs[s][k]['count']):
                 print('-->', lid, '| c =', self.motifs[s][lid]['count'])
-motifs.py
