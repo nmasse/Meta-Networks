@@ -5,8 +5,8 @@ import sys
 
 task = 'DMRS90'
 
-for j in range(10):
-    save_fn = 'elim_' + task + '_' + str(j) + '.pkl'
+for j in range(0,100,1):
+    save_fn = 'elim_high_noise_' + task + '_' + str(j) + '.pkl'
     updates = {'trial_type': task, 'save_fn': save_fn}
     update_parameters(updates)
 

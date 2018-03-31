@@ -352,7 +352,7 @@ class Stimulus:
             """
             trial_info['desired_output'][0, eodead:eod_current, t] = 1
             if not catch:
-                trial_info['train_mask'][eod_current:, t] = 4 # give greater weight to test period
+                trial_info['train_mask'][eod_current:, t] = 2 # give greater weight to test period
                 if match == 0:
                     trial_info['desired_output'][1, eod_current:, t] = 1
                 else:
