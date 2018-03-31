@@ -51,16 +51,16 @@ par = {
 
 
     # Timings and rates
-    'dt'                    : 20,
-    'learning_rate'         : 1e-3,
+    'dt'                    : 10,
+    'learning_rate'         : 5e-3,
     'membrane_time_constant': 100,
     'connection_prob'       : 1.,         # Usually 1
 
     # Variance values
     'clip_max_grad_val'     : 1,
     'input_mean'            : 0.0,
-    'noise_in_sd'           : 0.05,
-    'noise_rnn_sd'          : 0.1,
+    'noise_in_sd'           : 0.1,
+    'noise_rnn_sd'          : 0.4,
 
     # Tuning function data
     'num_motion_dirs'       : 8,
@@ -68,8 +68,8 @@ par = {
     'kappa'                 : 2,        # concentration scaling factor for von Mises
 
     # Cost parameters
-    'spike_cost'            : 1e-7,
-    'wiring_cost'           : 1e-2, # 1e-1
+    'spike_cost'            : 1e-3,
+    'wiring_cost'           : 0., # 1e-1
     'beta'                  : 1e-8,
     'accuracy_cost'         : 1.,
 
@@ -81,8 +81,8 @@ par = {
     'U_std'                 : 0.45,
 
     # Training spec
-    'batch_train_size'      : 64,
-    'num_iterations'        : 20000,
+    'batch_train_size'      : 1024,
+    'num_iterations'        : 500,
     'iters_between_outputs' : 100,
     'num_network_iters'     : 40,
 
@@ -92,9 +92,9 @@ par = {
     'dead_time'             : 100,
     'fix_time'              : 100,
     'sample_time'           : 200,
-    'delay_time'            : 600, #400
+    'delay_time'            : 800, #400
     'test_time'             : 200,
-    'variable_delay_max'    : 300, #300
+    'variable_delay_max'    : 400, #300
     'mask_duration'         : 40,  # duration of traing mask after test onset
     'catch_trial_pct'       : 0.0,
     'num_receptive_fields'  : 1,

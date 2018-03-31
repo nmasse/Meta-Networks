@@ -207,9 +207,13 @@ def main(gpu_id = None):
         # history of info to save
         results = {'gate_hist': [], 'accuracy_hist': [], 'weights_hist': []}
 
-        for k in range(p.par['n_hidden']):
+        for k in range(p.par['n_hidden']-5):
             print('NETWORK ITERATION ', k)
-            for i in range(p.par['num_iterations']):
+            if k == 0:
+                add_iter = 500
+            else:
+                add_iter = 0
+            for i in range(p.par['num_iterations'] + add_iter):
 
                 # generate batch of batch_train_size
                 trial_info = stim.generate_trial()
