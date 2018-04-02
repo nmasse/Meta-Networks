@@ -60,7 +60,7 @@ par = {
     'clip_max_grad_val'     : 1,
     'input_mean'            : 0.0,
     'noise_in_sd'           : 0.1,
-    'noise_rnn_sd'          : 0.4,
+    'noise_rnn_sd'          : 0.5,
 
     # Tuning function data
     'num_motion_dirs'       : 8,

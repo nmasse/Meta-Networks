@@ -11,17 +11,17 @@ import analysis
 
 class Motifs:
 
-    def __init__(self, data_dir, file_prefix):
+    def __init__(self, data_dir, file_prefix, N = None):
 
         self.motifs = {}
-        self.motif_sizes = [2,3]
+        self.motif_sizes = [2,3,4]
         data_files = os.listdir(data_dir)
 
         for f in data_files:
             if f.startswith(file_prefix):
                 print('Processing ', f)
                 self.current_filename = f
-                W, v = self.make_matrix(data_dir + f, 'elim_lesion')
+                W, v = self.make_matrix(data_dir + f, 'elim_lesion', N)
                 print(type(W))
                 if type(W) is list:
                     for i,w1 in enumerate(W):
@@ -32,13 +32,13 @@ class Motifs:
         self.print_motif_list()
 
 
-    def make_matrix(self, filename, method):
+    def make_matrix(self, filename, method, N):
         x = pickle.load(open(filename, 'rb'))
-        beh_threshold = 0.01
+        beh_threshold = 0.1
         val_th = 0.1
-        ind_accurate = np.where(np.array(x['accuracy_hist']) > 0.95)[0]
-        N = np.argmax(ind_accurate)
-        #N = 1
+        ind_accurate = np.where(np.array(x['accuracy_hist']) > 0.98)[0]
+        #N = np.argmax(ind_accurate)
+        #N = 6
         print('N = ', N)
 
         if method == 'elim_lesion' or  method == 'elim':
@@ -102,10 +102,10 @@ class Motifs:
             W = np.vstack((w1, w2))
             d = W.shape[0] - W.shape[1]
             W = np.hstack((W, np.zeros((W.shape[0], d))))
-            #plt.imshow(W, aspect='auto', interpolation = 'none')
-            #plt.colorbar()
-            #plt.show()
-            #print(v)
+            plt.imshow(W, aspect='auto', interpolation = 'none')
+            plt.colorbar()
+            plt.show()
+            print(v)
 
         elif method == 'stacked':
             W = []
@@ -190,7 +190,7 @@ class Motifs:
         W1 = W1[u, :]
         v1 = v[u]
 
-        if np.sum(W1) < len(u)+1:
+        if np.sum(W1) < len(u):
             return
 
         # check for loops

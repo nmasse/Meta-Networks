@@ -142,7 +142,7 @@ class Model:
 
         # Calculate spiking loss
         self.spike_loss = [p.par['spike_cost']*tf.reduce_mean(tf.square(h), axis=0) for h in self.network_hidden]
-        self.spike_loss = tf.reduce_mean(self.spike_loss)
+        self.spike_loss = tf.reduce_mean(self.spike_loss)/tf.reduce_mean(self.gate)
 
         # Calculate wiring cost
         self.wiring_loss = [p.par['wiring_cost']*tf.nn.relu(W_rnn) \
